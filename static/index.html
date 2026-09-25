@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finanzas Personales</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <h1>💰 Finanzas Personales</h1>
+      <nav class="tabs">
+        <button class="tab active" data-view="panel">Panel</button>
+        <button class="tab" data-view="agent">Agente 🤖</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ===================== PANEL ===================== -->
+    <section id="view-panel">
+      <div class="toolbar">
+        <label class="period-label">Período
+          <select id="period-select">
+            <option value="mes">Este mes</option>
+            <option value="anio">Este año</option>
+            <option value="todo">Todo</option>
+          </select>
+        </label>
+        <span id="period-info" class="muted"></span>
+      </div>
+
+      <div class="cards" id="summary-cards">
+        <div class="card summary">
+          <div class="card-label">Balance</div>
+          <div class="card-value" id="sum-balance">—</div>
+        </div>
+        <div class="card summary income">
+          <div class="card-label">Ingresos</div>
+          <div class="card-value" id="sum-income">—</div>
+        </div>
+        <div class="card summary expense">
+          <div class="card-label">Gastos</div>
+          <div class="card-value" id="sum-expense">—</div>
+        </div>
+        <div class="card summary">
+          <div class="card-label">Movimientos</div>
+          <div class="card-value" id="sum-count">—</div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Registrar movimiento</h2>
+          <form id="tx-form" class="tx-form">
+            <div class="form-row">
+              <label>Tipo
+                <select id="tx-type" name="type">
+                  <option value="expense">Gasto</option>
+                  <option value="income">Ingreso</option>
+                </select>
+              </label>
+              <label>Monto
+                <input type="number" id="tx-amount" name="amount" step="0.01" min="0.01" required placeholder="0,00" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Categoría
+                <select id="tx-category" name="category" required></select>
+              </label>
+              <label>Fecha
+                <input type="date" id="tx-date" name="date" />
+              </label>
+            </div>
+            <label>Descripción
+              <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
+            </label>
+            <button type="submit" class="btn primary">Registrar</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Gastos por categoría</h2>
+          <div id="category-bars"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Movimientos</h2>
+        <div class="table-wrap">
+          <table id="tx-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Categoría</th>
+                <th>Descripción</th>
+                <th>Tipo</th>
+                <th class="num">Monto</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tx-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== AGENTE ===================== -->
+    <section id="view-agent" class="hidden">
+      <div class="card chat-card">
+        <h2>Asistente financiero</h2>
+        <div id="chat-fallback" class="muted small hidden">
+          ⚠️ Modo demo: el agente responde con reglas simuladas. Configurá <code>OPENAI_API_KEY</code> para
+          respuestas reales (ver README).
+        </div>
+        <div id="chat-log" class="chat-log"></div>
+        <div id="pending-area"></div>
+        <form id="chat-form" class="chat-form">
+          <input
+            id="chat-input"
+            type="text"
+            placeholder='Ej: "¿Cuál es mi balance este mes?"'
+            autocomplete="off" />
+          <button type="submit" class="btn primary">Enviar</button>
+        </form>
+        <p class="muted small chat-hints">
+          Probá: <em>¿cuál es mi balance?</em> · <em>resumí mis gastos por categoría</em> ·
+          <em>registrá un gasto de 75.000 en Motos</em> (pide confirmación) ·
+          <em>eliminá la transacción 1</em> (pide confirmación)
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
