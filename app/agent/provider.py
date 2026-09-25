@@ -9,6 +9,7 @@ registralo en `get_provider`.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 
@@ -42,7 +43,9 @@ class MockProvider:
         if any(k in text for k in ("transacciones", "movimientos", "list")):
             return None, [ToolCall("listar_transacciones", {"limite": 20})]
         if any(k in text for k in ("elimin", "borr", "saca")):
-            return None, [ToolCall("eliminar_transaccion", {"id": 1})]
+            m = re.search(r"\b(\d+)\b", text)
+            target_id = int(m.group(1)) if m else 1
+            return None, [ToolCall("eliminar_transaccion", {"id": target_id})]
         if any(k in text for k in ("registr", "agreg", "anota", "gasto", "ingreso")):
             return None, [
                 ToolCall(

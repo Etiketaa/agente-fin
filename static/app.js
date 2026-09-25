@@ -19,15 +19,13 @@ const state = {
 
 const $ = (sel) => document.querySelector(sel);
 
-function moneyFmt(centsOrNumber) {
-  const n = typeof centsOrNumber === "number" && Number.isInteger(centsOrNumber)
-    ? centsOrNumber / 100
-    : centsOrNumber;
+function moneyFmt(amount) {
+  // La API devuelve montos en unidades de moneda (floats); acá solo se formatean.
   return new Intl.NumberFormat("es-AR", {
     style: "currency",
     currency: state.currency,
     maximumFractionDigits: 2,
-  }).format(n);
+  }).format(amount);
 }
 
 function esc(text) {
@@ -170,7 +168,7 @@ async function renderTransactions() {
       <td>${esc(t.category)}</td>
       <td>${esc(t.description || "—")}</td>
       <td><span class="tag ${t.type}">${isIncome ? "Ingreso" : "Gasto"}</span></td>
-      <td class="num ${isIncome ? "pos" : "neg"}">${moneyFmt(t.amount_cents)}</td>
+      <td class="num ${isIncome ? "pos" : "neg"}">${moneyFmt(t.amount)}</td>
       <td><button class="btn ghost small-btn" data-del="${t.id}" title="Eliminar">✕</button></td>`;
     tbody.appendChild(tr);
   }

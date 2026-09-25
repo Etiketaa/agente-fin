@@ -37,7 +37,25 @@ def check(name: str, cond: bool):
         sys.exit(1)
 
 
+def cleanup(ids: list[int]):
+    for tid in ids:
+        try:
+            req("DELETE", f"/api/transactions/{tid}")
+        except Exception:
+            pass
+
+
 def main():
+    created_ids: list[int] = []
+    try:
+        _run(created_ids)
+        print("\n✅ Smoke test completo.")
+    finally:
+        if created_ids:
+            cleanup(created_ids)
+
+
+def _run(created_ids: list[int]):
     print("Esperando el servidor…")
     wait_server()
 
@@ -53,13 +71,16 @@ def main():
     print("\n[transacciones]")
     t = req("POST", "/api/transactions", {
         "type": "expense", "amount": 12345.67, "category": "Motos", "description": "smoke test"})
+    created_ids.append(t["id"])
     check(f"crea transacción #{t['id']} → {t['amount_cents']} centavos", t["amount_cents"] == 1234567)
     t2 = req("POST", "/api/transactions", {"type": "income", "amount": 50000, "category": "Sueldo"})
+    created_ids.append(t2["id"])
     check(f"crea ingreso #{t2['id']}", t2["type"] == "income")
 
     s = req("GET", "/api/summary")
-    check(f"balance > 0 (ingresos {s['total_income']} > gastos {s['total_expense']})",
-          s["balance"] > 0)
+    check("resumen coherente (balance = ingresos − gastos)",
+          abs(s["balance"] - (s["total_income"] - s["total_expense"])) < 0.01)
+    check("hay ingresos y gastos", s["total_income"] > 0 and s["total_expense"] > 0)
 
     print("\n[agente — modo demo]")
     a1 = req("POST", "/api/agent/chat", {"messages": [{"role": "user", "content": "¿cuál es mi balance?"}]})
@@ -67,13 +88,17 @@ def main():
     check("sin acción pendiente", a1["pending_action"] is None)
 
     print("\n[agente — acción sensible → confirmación]")
-    a2 = req("POST", "/api/agent/chat", {"messages": [{"role": "user", "content": "eliminá la transacción"}]})
+    tx3 = req("POST", "/api/transactions", {"type": "expense", "amount": 9999, "category": "Motos"})
+    check(f"crea transacción #{tx3['id']} para el test de borrado", True)
+    msg = f"eliminá la transacción {tx3['id']}"
+    a2 = req("POST", "/api/agent/chat", {"messages": [{"role": "user", "content": msg}]})
     check("devuelve pending_action", a2["pending_action"] is not None)
     check("pending es eliminar_transaccion", a2["pending_action"]["tool"] == "eliminar_transaccion")
+    check("pending apunta al id correcto", a2["pending_action"]["args"]["id"] == tx3["id"])
 
     print("\n[agente — confirmación de la acción]")
     a3 = req("POST", "/api/agent/confirm", {
-        "messages": [{"role": "user", "content": "eliminá la transacción"}],
+        "messages": [{"role": "user", "content": msg}],
         "pending_action": a2["pending_action"],
     })
     check("confirmación ejecuta y responde", a3["reply"] is not None and "eliminada" in a3["reply"])
@@ -83,12 +108,11 @@ def main():
     check("pending_action = registrar_transaccion", a4["pending_action"]
           and a4["pending_action"]["tool"] == "registrar_transaccion")
 
-    print("\n[limpieza]")
-    req("DELETE", f"/api/transactions/{t['id']}")
-    req("DELETE", f"/api/transactions/{t2['id']}")
-    check("datos de smoke eliminados", True)
-
-    print("\n✅ Smoke test completo.")
+    print("\n[verificación — la transacción del test quedó eliminada]")
+    lista = req("GET", "/api/transactions?limite=100")
+    check(f"la #{tx3['id']} no figura en la lista", all(t["id"] != tx3["id"] for t in lista))
+    if tx3["id"] in created_ids:
+        created_ids.remove(tx3["id"])
 
 
 if __name__ == "__main__":
