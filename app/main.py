@@ -51,5 +51,13 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Finanzas Personales", lifespan=lifespan)
+
+
+@app.get("/health")
+def health():
+    """Sonda mínima para verificar que el proceso responde."""
+    return {"status": "ok"}
+
+
 app.include_router(router)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

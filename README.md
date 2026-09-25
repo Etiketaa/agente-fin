@@ -30,12 +30,33 @@ cp .env.example .env
 #   OPENAI_API_KEY=sk-...
 #   (opcional) OPENAI_BASE_URL para OpenRouter, Ollama, LM Studio, vLLM...
 
+# NVIDIA API (endpoint compatible con OpenAI)
+#   OPENAI_API_KEY=nvapi-...
+#   OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
+#   OPENAI_MODEL=nvidia/nemotron-3-super-120b-a12b
+
 uvicorn app.main:app --reload
 ```
 
 Abrí **http://127.0.0.1:8000**
 
 > Para empezar de cero borrá `finanzas.db` y reiniciá el servidor.
+
+### Verificación del proveedor
+
+Con el servidor corriendo, la sonda confirma que el proveedor habla el
+protocolo de tool-calling que necesita el agente:
+
+```bash
+.venv/bin/python -m scripts.prove_provider
+```
+
+El smoke test recorre el CRUD, una consulta al agente y la confirmación de
+acciones sensibles:
+
+```bash
+.venv/bin/python -m scripts.smoke
+```
 
 ## Cómo funciona el agente
 
@@ -65,9 +86,14 @@ ejecuta. Es una invariante de seguridad del sistema, no una convención del mode
 ### Modelo intercambiable (punto clave de la arquitectura)
 
 Todo el sistema habla con `app/agent/provider.py`. Cambiar de modelo es editar
-dos variables de entorno:
+unas variables de entorno:
 
 ```bash
+# NVIDIA API (la configuración usada en este laboratorio)
+OPENAI_API_KEY=nvapi-...
+OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
+OPENAI_MODEL=nvidia/nemotron-3-super-120b-a12b
+
 # OpenAI
 OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://api.openai.com/v1

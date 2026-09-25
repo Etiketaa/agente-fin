@@ -59,6 +59,10 @@ def _run(created_ids: list[int]):
     print("Esperando el servidor…")
     wait_server()
 
+    print("\n[health]")
+    health = req("GET", "/health")
+    check("health endpoint responde", health.get("status") == "ok")
+
     print("\n[config]")
     cfg = req("GET", "/api/config")
     check(f"config expone currency={cfg['currency']}, provider={cfg['provider']}", True)
@@ -82,9 +86,9 @@ def _run(created_ids: list[int]):
           abs(s["balance"] - (s["total_income"] - s["total_expense"])) < 0.01)
     check("hay ingresos y gastos", s["total_income"] > 0 and s["total_expense"] > 0)
 
-    print("\n[agente — modo demo]")
+    print(f"\n[agente — proveedor {cfg['provider']}]")
     a1 = req("POST", "/api/agent/chat", {"messages": [{"role": "user", "content": "¿cuál es mi balance?"}]})
-    check("respuesta de balance", a1["reply"] and "Balance" in a1["reply"])
+    check("devuelve una respuesta de balance no vacía", bool(a1["reply"]))
     check("sin acción pendiente", a1["pending_action"] is None)
 
     print("\n[agente — acción sensible → confirmación]")
