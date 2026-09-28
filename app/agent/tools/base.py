@@ -66,17 +66,39 @@ def parse_date(value: str | None) -> date | None:
 
 
 def find_category(db: Session, name: str, kind: str | None = None) -> Category:
-    """Busca una categoría por nombre (sin distinguir mayúsculas)."""
-    cat = db.scalar(select(Category).where(func.lower(Category.name) == name.strip().lower()))
-    if cat is None:
-        raise ValueError(
-            f"No existe la categoría '{name}'. {category_catalogue(db)}"
-        )
-    if kind and cat.kind != kind:
-        raise ValueError(
-            f"La categoría '{cat.name}' es de tipo '{cat.kind}', no de '{kind}'."
-        )
-    return cat
+    """Busca una categoría por nombre (sin distinguir mayúsculas, con fuzzy match).
+
+    Acepta coincidencia exacta, contenida (\"comida\" → \"Comida\"),
+    o que el nombre de la categoría esté contenido en la query (\"supermercado\" → \"Comida\").
+    """
+    normalized = name.strip().lower()
+
+    # 1. Exact match (case-insensitive)
+    cat = db.scalar(select(Category).where(func.lower(Category.name) == normalized))
+    if cat:
+        if kind and cat.kind != kind:
+            raise ValueError(f"La categoría '{cat.name}' es de tipo '{cat.kind}', no de '{kind}'.")
+        return cat
+
+    # 2. Query contains category name (e.g. "presupuesto para comida" → "Comida")
+    all_cats = db.scalars(select(Category)).all()
+    for c in all_cats:
+        if c.name.lower() in normalized:
+            if kind and c.kind != kind:
+                continue
+            return c
+
+    # 3. Category name contains query (e.g. "comida" → "Comida")
+    for c in all_cats:
+        if normalized in c.name.lower():
+            if kind and c.kind != kind:
+                continue
+            return c
+
+    # Sin match: error con catálogo
+    raise ValueError(
+        f"No existe la categoría '{name}'. {category_catalogue(db)}"
+    )
 
 
 def category_catalogue(db: Session) -> str:

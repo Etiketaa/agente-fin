@@ -13,7 +13,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
-from . import budgets, goals, transactions
+from . import budgets, goals, imports, transactions, vehicles
 from .base import cents_to_money, fmt, fmt_amount, money_to_cents  # re-exportados
 
 __all__ = [
@@ -32,7 +32,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _IMPLS: dict[str, object] = {}
-for _module in (transactions, goals, budgets):
+for _module in (transactions, goals, budgets, vehicles, imports):
     _IMPLS.update(_module.IMPLS)
 
 # ---------------------------------------------------------------------------
@@ -46,6 +46,8 @@ TOOLS = [
     *transactions.SCHEMAS,
     *goals.SCHEMAS,
     *budgets.SCHEMAS,
+    *vehicles.SCHEMAS,
+    *imports.SCHEMAS,
 ]
 
 # Toda herramienta destructiva pasa por acá, sin excepción.
@@ -53,6 +55,8 @@ _SIEMPRE_SENSIBLE = {
     "eliminar_transaccion",
     "eliminar_objetivo",
     "eliminar_presupuesto",
+    "eliminar_vehiculo",
+    "importar_csv",  # escribe muchos registros de una
 }
 
 # Escrituras que se frenan a partir de cierto monto.
@@ -119,5 +123,14 @@ def summarize_action(name: str, args: dict) -> str:
 
     if name == "eliminar_presupuesto":
         return f"Eliminar el presupuesto #{args.get('id')}"
+
+    if name == "crear_vehiculo":
+        return f"Crear el vehículo «{args.get('nombre')}» (tipo: {args.get('tipo')})"
+
+    if name == "eliminar_vehiculo":
+        return f"Eliminar el vehículo #{args.get('id')}"
+
+    if name == "importar_csv":
+        return f"Importar movimientos desde «{args.get('archivo')}»"
 
     return f"Ejecutar {name} con {args}"

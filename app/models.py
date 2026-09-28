@@ -18,6 +18,17 @@ class Category(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class Vehicle(Base):
+    """Vehículo (moto, auto, etc.) para categorizar gastos específicos."""
+    __tablename__ = "vehicles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)  # ej: "Moto Honda", "Auto usado"
+    kind: Mapped[str] = mapped_column(String(20))  # "moto" | "auto" | "otro"
+    notes: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -33,10 +44,20 @@ class Transaction(Base):
     goal_id: Mapped[int | None] = mapped_column(
         ForeignKey("savings_goals.id"), nullable=True, index=True
     )
+    # Tags libres para consultas flexibles (ej: ["moto", "combustible"]).
+    # Se guardan como JSON string: '["tag1", "tag2"]'.
+    tags: Mapped[str | None] = mapped_column(String(300), nullable=True, default=None)
+    # Vehículo asociado (para gastos de moto/auto: combustible, mantenimiento, seguro).
+    vehicle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicles.id"), nullable=True, index=True
+    )
+    # Hash de importación para deduplicación (fecha|monto|tipo|descripción normalizada).
+    import_hash: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     category: Mapped[Category] = relationship()
     goal: Mapped["SavingsGoal | None"] = relationship()
+    vehicle: Mapped["Vehicle | None"] = relationship()
 
 
 class SavingsGoal(Base):
@@ -61,6 +82,9 @@ class Budget(Base):
 
     El monto es por mes calendario y se aplica a todos los meses hasta que se
     cambie o se elimine. `category_id` es único: una categoría, un presupuesto.
+
+    `rollover_cents` guarda lo que sobró (positivo) o faltó (negativo) del mes
+    anterior y se suma al límite del mes actual para dar el "tope efectivo".
     """
 
     __tablename__ = "budgets"
@@ -68,6 +92,7 @@ class Budget(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), unique=True)
     amount_cents: Mapped[int] = mapped_column(Integer)
+    rollover_cents: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     category: Mapped[Category] = relationship()

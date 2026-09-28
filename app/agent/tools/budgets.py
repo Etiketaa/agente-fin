@@ -55,6 +55,10 @@ def definir_presupuesto(db: Session, args: dict) -> str:
         raise ValueError("El monto del presupuesto debe ser mayor a cero.")
     cents = money_to_cents(monto)
 
+    # mes es opcional (default = actual). El modelo Budget no tiene campo mes
+    # porque es un tope mensual fijo; se filtra por mes en analytics.budget_rows.
+    _ = args.get("mes")  # se ignora, pero se acepta para compatibilidad
+
     budget = db.scalar(select(Budget).where(Budget.category_id == cat.id))
     if budget is None:
         budget = Budget(category_id=cat.id, amount_cents=cents)
@@ -107,13 +111,15 @@ SCHEMAS = [
             "name": "definir_presupuesto",
             "description": (
                 "Define el presupuesto mensual de una categoría de gasto. Si la categoría "
-                "ya tiene presupuesto, lo actualiza al monto nuevo."
+                "ya tiene presupuesto, lo actualiza al monto nuevo. El mes es opcional: "
+                "si no se indica, usa el mes actual."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "categoria": {"type": "string", "description": "Nombre exacto de la categoría de gasto"},
+                    "categoria": {"type": "string", "description": "Nombre de la categoría de gasto (ej: Comida, Transporte, Ocio). Acepta coincidencias parciales."},
                     "monto": {"type": "number", "description": "Presupuesto mensual en la moneda local (ARS)"},
+                    "mes": {"type": "string", "description": "Mes en formato YYYY-MM (opcional, default = mes actual)"},
                 },
                 "required": ["categoria", "monto"],
                 "additionalProperties": False,

@@ -10,7 +10,7 @@ from sqlalchemy import inspect, select
 
 from .api import router
 from .db import Base, SessionLocal, engine
-from .models import Category
+from .models import Category, Vehicle
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -20,11 +20,13 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # una consulta, lejos de la causa real.
 EXPECTED_COLUMNS: dict[str, set[str]] = {
     "categories": {"id", "name", "kind", "created_at"},
+    "vehicles": {"id", "name", "kind", "notes", "created_at"},
     "transactions": {
-        "id", "type", "amount_cents", "description", "date", "category_id", "goal_id", "created_at",
+        "id", "type", "amount_cents", "description", "date", "category_id",
+        "goal_id", "tags", "vehicle_id", "import_hash", "created_at",
     },
     "savings_goals": {"id", "name", "target_cents", "target_date", "notes", "created_at"},
-    "budgets": {"id", "category_id", "amount_cents", "created_at"},
+    "budgets": {"id", "category_id", "amount_cents", "rollover_cents", "created_at"},
 }
 
 

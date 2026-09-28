@@ -18,25 +18,44 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from . import tools as T
 from .provider import ToolCall, get_provider
+from ..db import SessionLocal
+from ..models import Category
+from sqlalchemy import select
 
 MAX_ITERS = 6
 
 _SETTINGS = get_settings()
 
-SYSTEM_PROMPT = f"""Sos el asistente financiero personal de Franco. Hoy es {date.today().isoformat()}. Operás sobre su sistema de finanzas personales: ingresos, gastos, categorías, objetivos de ahorro y presupuestos mensuales.
 
-La moneda es {_SETTINGS.currency}.
+def _categories_hint() -> str:
+    """Lista corta de categorías para que el modelo no pregunte."""
+    db = SessionLocal()
+    try:
+        rows = db.execute(select(Category.name, Category.kind).order_by(Category.kind, Category.name)).all()
+        income = ", ".join(n for n, k in rows if k == "income") or "(ninguna)"
+        expense = ", ".join(n for n, k in rows if k == "expense") or "(ninguna)"
+        return f"Categorías válidas — ingreso: {income}. Gasto: {expense}."
+    finally:
+        db.close()
+
+
+SYSTEM_PROMPT_TEMPLATE = """Sos el asistente financiero personal de Franco. Hoy es {today}. Operás sobre su sistema de finanzas personales: ingresos, gastos, categorías, objetivos de ahorro y presupuestos mensuales.
+
+La moneda es {currency}.
+
+{categories_hint}
 
 Reglas:
 1. Respondé SIEMPRE en español, breve y con números claros.
 2. Nunca inventes datos: para conocer información de las finanzas usá las herramientas disponibles y devolvé lo que devuelven.
-3. Si una herramienta devuelve un error (por ejemplo una categoría inexistente), corregí el pedido usando la información del error. Si no, preguntale a Franco con una pregunta corta.
+3. Si una herramienta devuelve un error (p. ej. categoría inexistente), corregí el pedido usando la información del error. Si no, preguntale a Franco con una pregunta corta.
 4. Si te falta información necesaria, pedila con una pregunta corta.
 5. Si Franco te pide eliminar algo o registrar un monto grande, ejecutá la herramienta igual: el sistema frenará la acción y le pedirá confirmación.
 6. Mostrá los montos con separador de miles, por ejemplo: $1.234.567.
 7. Sobre presupuestos: avisá proactivamente cuando Franco pregunte cómo viene, y no escondas los estados "atencion" o "excedido". Si al ritmo actual va a pasar el límite, decilo.
 8. Un movimiento con "objetivo" asignado es dinero separado para una meta: además de contar en el balance, suma al progreso del objetivo. No lo cuentes dos veces en la respuesta.
-9. Podés sugerir crear un presupuesto o un objetivo si los datos lo justifican, pero nunca lo hagas sin que Franco lo pida."""
+9. Podés sugerir crear un presupuesto o un objetivo si los datos lo justifican, pero nunca lo hagas sin que Franco lo pida.
+"""
 
 
 def _answer(reply: str | None, pending: dict | None = None) -> dict:
@@ -84,7 +103,12 @@ def run_agent(messages: list[dict], db: Session, pre_confirmed: dict | None = No
       ejecuta primero esa acción y se continúa el diálogo.
     """
     provider = get_provider()
-    full: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        today=date.today().isoformat(),
+        currency=_SETTINGS.currency,
+        categories_hint=_categories_hint(),
+    )
+    full: list[dict] = [{"role": "system", "content": system_prompt}]
     full.extend(_clean(messages))
 
     executed_first = False

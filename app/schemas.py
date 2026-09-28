@@ -91,6 +91,10 @@ class BudgetOut(BaseModel):
     category: str
     limit: float
     limit_cents: int
+    effective_limit: float
+    effective_limit_cents: int
+    rollover: float
+    rollover_cents: int
     spent: float
     spent_cents: int
     remaining: float
