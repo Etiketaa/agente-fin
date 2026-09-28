@@ -1,4 +1,4 @@
-# 💰 Finanzas Personales — v1
+# 💰 Finanzas Personales
 
 Sistema de finanzas personales con **agente de IA** integrado.
 
@@ -51,8 +51,8 @@ protocolo de tool-calling que necesita el agente:
 .venv/bin/python -m scripts.prove_provider
 ```
 
-El smoke test recorre el CRUD, una consulta al agente y la confirmación de
-acciones sensibles:
+El smoke test recorre el CRUD, objetivos, presupuestos, una consulta al agente
+y la confirmación de acciones sensibles:
 
 ```bash
 .venv/bin/python -m scripts.smoke
@@ -72,18 +72,71 @@ Frontend (chat) → POST /api/agent/chat → bucle: modelo → tools → modelo 
 
 | Herramienta | Qué hace | ¿Sensible? |
 |---|---|---|
-| `listar_transacciones` | Lista movimientos con filtros | No |
+| `listar_transacciones` | Lista movimientos con filtros (incluye filtro por objetivo) | No |
 | `calcular_balance` | Ingresos − gastos en un período | No |
 | `resumen_por_categoria` | Totales por categoría | No |
 | `listar_categorias` | Categorías disponibles | No |
-| `registrar_transaccion` | Da de alta un ingreso/gasto | Sí, si monto ≥ `SENSITIVE_AMOUNT` |
+| `listar_objetivos` | Objetivos con progreso y ritmo necesario | No |
+| `listar_presupuestos` | Presupuestos del mes con alertas y proyección | No |
+| `registrar_transaccion` | Da de alta un ingreso/gasto, opcionalmente a un objetivo | Sí, si monto ≥ `SENSITIVE_AMOUNT` |
+| `crear_objetivo` | Crea una meta de ahorro | No (es una meta, no mueve dinero) |
+| `definir_presupuesto` | Define o actualiza el tope mensual de una categoría | No |
 | `eliminar_transaccion` | Borra un movimiento | **Siempre** |
+| `eliminar_objetivo` | Borra un objetivo (falla si tiene aportes) | **Siempre** |
+| `eliminar_presupuesto` | Borra un presupuesto | **Siempre** |
 
 Las acciones sensibles **nunca se ejecutan** sin tu confirmación: el backend
 devuelve la propuesta, vos la aprobás explícitamente en la UI y recién ahí se
 ejecuta. Es una invariante de seguridad del sistema, no una convención del modelo.
 
-### Modelo intercambiable (punto clave de la arquitectura)
+Notá la asimetría entre **crear un objetivo por $8.000.000** (no pide
+confirmación: es una intención) y **apartar $150.000 para él** (pide
+confirmación: es dinero que se mueve). La regla no es "todo monto grande", es
+"todo lo que escribe o destruye registro".
+
+## Objetivos de ahorro
+
+Un objetivo es una meta (`target_cents`) con fecha límite opcional.
+
+**El saldo no se guarda: se deriva.** La tabla `savings_goals` no tiene columna
+de progreso; el avance sale de sumar los movimientos que tienen su
+`goal_id`. Consecuencia práctica: el objetivo nunca puede desincronizarse del
+libro de movimientos, porque no hay un segundo número que pueda mentir.
+
+Un movimiento asignado a un objetivo:
+
+- suma a su progreso, y
+- **también cuenta en el balance general**, porque el dinero efectivamente salió
+  de tu cuenta.
+
+Registrás el aporte desde el formulario ("Ahorro" → objetivo) o por chat
+(*"guardá un aporte de 100.000 al fondo de emergencia"*).
+
+No se puede borrar un objetivo que tiene movimientos asignados: se rechaza con
+un 409 y el detalle de cuántos son. Desvincularlos en silencio dejaría
+movimientos apuntando a un objetivo inexistente.
+
+## Presupuestos mensuales y alertas
+
+Una fila por categoría con un tope mensual. `BUDGET_ALERT_PCT` (0.8 por
+defecto) define desde qué porcentaje empieza a avisar. El estado sale de
+comparar lo gastado en el mes calendario contra el tope:
+
+| Estado | Cuándo | Cómo se ve |
+|---|---|---|
+| `ok` | menos del umbral | 🟢 |
+| `atencion` | del umbral al 100% | 🟡 fondo ámbar |
+| `excedido` | pasado el 100% | 🔴 fondo rojo |
+
+Además del estado, cada presupuesto trae una **proyección** a ritmo actual
+(`gastado / días transcurridos × días del mes`) y los días que faltan del mes.
+Alcanzar el 80% de Motos con 2 días restantes no avisa lo mismo que con 20, y
+por eso el agente lo dice explícitamente.
+
+La alerta vive en dos lugares y sale de la **misma función** (`app/analytics.py`):
+el panel y la respuesta del agente. No hay dos cálculos que puedan discrepar.
+
+## Modelo intercambiable (punto clave de la arquitectura)
 
 Todo el sistema habla con `app/agent/provider.py`. Cambiar de modelo es editar
 unas variables de entorno:
@@ -122,19 +175,27 @@ finanzas/
 ├── app/
 │   ├── config.py          # configuración vía .env
 │   ├── db.py              # motor + sesiones (SQLite → PostgreSQL después)
-│   ├── models.py          # Category, Transaction (montos en centavos)
+│   ├── models.py          # Category, Transaction, SavingsGoal, Budget (centavos)
 │   ├── schemas.py         # contratos Pydantic de la API
+│   ├── analytics.py       # ← cálculo de saldos, metas y presupuestos
 │   ├── api.py             # endpoints REST
-│   ├── main.py            # app FastAPI + seed de categorías
+│   ├── main.py            # app FastAPI + seed de categorías + guard de esquema
 │   └── agent/
 │       ├── provider.py    # ← capa de proveedor intercambiable
-│       ├── tools.py       # herramientas: schema + implementación
-│       └── agent.py       # bucle agente ↔ herramientas + confirmación
+│       ├── agent.py       # bucle agente ↔ herramientas + confirmación
+│       └── tools/         # 12 herramientas, una por módulo
+│           ├── base.py            # formato de moneda + tipos comunes
+│           ├── transactions.py
+│           ├── goals.py
+│           └── budgets.py
 ├── static/                # frontend (sin build step)
 │   ├── index.html
 │   ├── styles.css
 │   └── app.js
-├── scripts/demo.py        # datos de ejemplo
+├── scripts/
+│   ├── demo.py            # datos de ejemplo (opcional)
+│   ├── smoke.py           # regresión end-to-end (~40 chequeos)
+│   └── prove_provider.py  # prueba real contra el proveedor configurado
 └── requirements.txt
 ```
 
@@ -148,12 +209,36 @@ finanzas/
   panel crezca; el backend queda igual.
 - **Confirmación en el backend, no en el frontend**: aunque mañana el chat lo
   use WhatsApp o una API, la regla "acciones sensibles requieren confirmación"
-  sigue vigente.
+  sigue vigente. La asimetría es deliberada: fijar *cuánto* querés ahorrar o
+  *cuánto* gastar por categoría no mueve plata y no se confirma; mover plata
+  (registrar una transacción) se confirma recién por encima de
+  `SENSITIVE_AMOUNT`, y borrar algo siempre se confirma.
+- **El balance de una meta se deriva, no se guarda**: no hay columna
+  `saved_cents`. El progreso es la suma de los `transactions.amount_cents` que
+  tienen esa `goal_id`. Un único libro contable, sin un contador que pueda
+  desincronizarse del movimiento real. El cálculo vive en `analytics.py` para
+  que la API (JSON) y las herramientas del agente (texto) no puedan discrepar.
+- **Sin migraciones automáticas**: `create_all()` agrega tablas nuevas pero *no*
+  columnas a tablas que ya existen. `main.py` compara el esquema esperado con el
+  real al arrancar y corta con un mensaje accionable en vez de dejar que reviente
+  un `no such column` a mitad de una consulta.
+- **Un movimiento con `goal_id` también suma al balance general**: la plata
+  efectivamente salió de la cuenta, además de contar para la meta. Está
+  documentado en el prompt (regla 8) para que el modelo no lo cuente dos veces.
+- **No se puede borrar una meta con aportes** (`409`): desvincularla en silencio
+  dejaría movimientos de plata apuntando a la nada. Hay que deshacer el aporte o
+  reasignar la meta primero.
 
-## Roadmap (iteraciones siguientes)
+## Roadmap
 
-1. **Objetivos de ahorro** + separación de dinero por objetivo.
-2. **Presupuesto mensual** por categoría con alertas.
+Hecho:
+
+1. ✅ **Objetivos de ahorro** + separación de dinero por objetivo.
+2. ✅ **Presupuesto mensual** por categoría con alertas (`ok` / `atención` /
+   `excedido`, con proyección de ritmo a fin de mes).
+
+Siguiente:
+
 3. **Gastos específicos de motos** (combustible, mantenimiento, seguro) con su tabla.
 4. **Detección de gastos que se disparan** (comparación contra el promedio).
 5. **Alertas y tareas automáticas** (vencimientos, por ejemplo).

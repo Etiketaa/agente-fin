@@ -7,8 +7,11 @@ const state = {
   provider: "mock",
   model: "mock",
   sensitiveAmount: 50000,
+  budgetAlertPct: 0.8,
   period: "mes",
   categories: [],
+  goals: [],
+  budgetMonth: currentMonth(),
   pending: null,
   chatMessages: [], // historial {role, content} enviado al backend
 };
@@ -18,6 +21,12 @@ const state = {
 // ---------------------------------------------------------------------------
 
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => [...document.querySelectorAll(sel)];
+
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 function moneyFmt(amount) {
   // La API devuelve montos en unidades de moneda (floats); acá solo se formatean.
@@ -26,6 +35,10 @@ function moneyFmt(amount) {
     currency: state.currency,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+function pct(n) {
+  return `${Math.round(n)}%`;
 }
 
 function esc(text) {
@@ -93,18 +106,42 @@ async function loadConfig() {
   state.provider = cfg.provider;
   state.model = cfg.model;
   state.sensitiveAmount = cfg.sensitive_amount;
+  state.budgetAlertPct = cfg.budget_alert_pct;
+  $("#alert-threshold").textContent = pct(state.budgetAlertPct * 100);
   if (state.provider === "mock") {
     $("#chat-fallback").classList.remove("hidden");
   }
 }
 
 async function loadCategories() {
-  const cats = await api("/api/categories");
-  state.categories = cats;
+  state.categories = await api("/api/categories");
+  syncCategoryOptions();
+  syncBudgetCategories();
+}
+
+// El selector de categoría depende del tipo elegido: una categoría de gasto no
+// puede ser la de un ingreso. Antes se llenaba solo con gastos, así que elegir
+// "Ingreso" y guardar siempre terminaba en un 400.
+function syncCategoryOptions() {
   const select = $("#tx-category");
   const prev = select.value;
+  const kind = $("#tx-type").value;
   select.innerHTML = "";
-  for (const c of cats) {
+  for (const c of state.categories) {
+    if (c.kind !== kind) continue;
+    const opt = document.createElement("option");
+    opt.value = c.name;
+    opt.textContent = c.name;
+    select.appendChild(opt);
+  }
+  if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+}
+
+function syncBudgetCategories() {
+  const select = $("#budget-category");
+  const prev = select.value;
+  select.innerHTML = "";
+  for (const c of state.categories) {
     if (c.kind !== "expense") continue;
     const opt = document.createElement("option");
     opt.value = c.name;
@@ -140,12 +177,12 @@ async function renderSummary() {
   const max = Math.max(...expenses.map((c) => c.total));
   bars.innerHTML = "";
   for (const c of expenses) {
-    const pct = Math.round((c.total / max) * 100);
+    const p = Math.round((c.total / max) * 100);
     const row = document.createElement("div");
     row.className = "bar-row";
     row.innerHTML = `
       <div class="bar-top"><span>${esc(c.category)}</span><span class="num">${moneyFmt(c.total)}</span></div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>`;
+      <div class="bar-track"><div class="bar-fill" style="width:${p}%"></div></div>`;
     bars.appendChild(row);
   }
 }
@@ -163,10 +200,11 @@ async function renderTransactions() {
   for (const t of rows) {
     const tr = document.createElement("tr");
     const isIncome = t.type === "income";
+    const goal = t.goal ? `<span class="tag goal" title="Aporte a un objetivo">🎯 ${esc(t.goal)}</span>` : "";
     tr.innerHTML = `
       <td>${esc(t.date)}</td>
       <td>${esc(t.category)}</td>
-      <td>${esc(t.description || "—")}</td>
+      <td>${esc(t.description || "—")} ${goal}</td>
       <td><span class="tag ${t.type}">${isIncome ? "Ingreso" : "Gasto"}</span></td>
       <td class="num ${isIncome ? "pos" : "neg"}">${moneyFmt(t.amount)}</td>
       <td><button class="btn ghost small-btn" data-del="${t.id}" title="Eliminar">✕</button></td>`;
@@ -186,8 +224,228 @@ async function renderTransactions() {
   });
 }
 
+function renderBudgetAlerts(rows) {
+  const box = $("#budget-alerts");
+  const alerts = rows.filter((b) => b.status !== "ok");
+  if (!alerts.length) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  const month = alerts[0].month;
+  const items = alerts
+    .map((b) => {
+      const icon = b.status === "excedido" ? "🔴" : "🟡";
+      const detalle = b.remaining_cents < 0
+        ? `te pasaste por ${moneyFmt(Math.abs(b.remaining))}`
+        : `quedan ${moneyFmt(b.remaining)}`;
+      return `<li>${icon} <strong>${esc(b.category)}</strong> — ${pct(b.percent)} de ${moneyFmt(b.limit)} (${detalle})</li>`;
+    })
+    .join("");
+  box.innerHTML = `
+    <div class="alert-box">
+      <div class="alert-title">⚠️ Presupuestos — ${esc(month)}</div>
+      <ul>${items}</ul>
+    </div>`;
+  box.classList.remove("hidden");
+}
+
 async function refreshPanel() {
-  await Promise.all([renderSummary(), renderTransactions()]);
+  // allSettled y no all: si un endpoint falla, el resto del panel tiene que
+  // seguir mostrando algo. Con Promise.all, un solo fallo dejaba el panel a
+  // medio cargar sin explicar por qué.
+  const tareas = [
+    ["resumen", renderSummary],
+    ["movimientos", renderTransactions],
+    ["objetivos", loadGoals],
+    ["presupuestos", loadBudgets],
+  ];
+  const fallos = await Promise.allSettled(tareas.map(([, fn]) => fn()));
+  const errores = fallos
+    .map((r, i) => (r.status === "rejected" ? `${tareas[i][0]}: ${r.reason?.message || r.reason}` : null))
+    .filter(Boolean);
+  if (errores.length) {
+    console.error("Fallas al recargar el panel:", errores);
+    toast(`No se pudo actualizar: ${errores.join(" · ")}`, "error");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Objetivos de ahorro
+// ---------------------------------------------------------------------------
+
+async function loadGoals() {
+  state.goals = await api("/api/goals");
+  // El selector del formulario de movimiento
+  const select = $("#tx-goal");
+  const prev = select.value;
+  select.innerHTML = `<option value="">— sin objetivo —</option>`;
+  for (const g of state.goals) {
+    const opt = document.createElement("option");
+    opt.value = g.name;
+    opt.textContent = g.name;
+    select.appendChild(opt);
+  }
+  if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+  renderGoals();
+}
+
+function renderGoals() {
+  const box = $("#goals-list");
+  if (!state.goals.length) {
+    box.innerHTML = `<div class="no-data">Todavía no tenés objetivos. Creá el primero arriba.</div>`;
+    return;
+  }
+  box.innerHTML = "";
+  for (const g of state.goals) {
+    const el = document.createElement("div");
+    el.className = `goal-card ${g.status}`;
+    const parts = [];
+    if (g.status === "alcanzado") parts.push("🎉 ¡Alcanzado!");
+    else if (g.status === "vencido") parts.push("⏰ Venció sin completarse");
+    if (g.required_per_month) {
+      parts.push(`faltan ${moneyFmt(g.required_per_month)} por mes para llegar a la fecha`);
+    }
+    const extra = parts.length
+      ? `<div class="goal-extra">${parts.map(esc).join(" · ")}</div>`
+      : "";
+    const fecha = g.target_date ? esc(g.target_date) : "sin fecha límite";
+    el.innerHTML = `
+      <div class="goal-head">
+        <div>
+          <div class="goal-name">${esc(g.name)}</div>
+          <div class="muted small">${fecha}${g.notes ? ` · ${esc(g.notes)}` : ""}</div>
+        </div>
+        <button class="btn ghost small-btn" data-del-goal="${g.id}" title="Eliminar objetivo">✕</button>
+      </div>
+      <div class="bar-track goal-track">
+        <div class="bar-fill" style="width:${Math.min(g.percent, 100)}%"></div>
+      </div>
+      <div class="bar-top">
+        <span class="num"><strong>${moneyFmt(g.saved)}</strong> de ${moneyFmt(g.target_amount)}</span>
+        <span class="muted">${pct(g.percent)}</span>
+      </div>
+      ${extra}`;
+    box.appendChild(el);
+  }
+  box.querySelectorAll("[data-del-goal]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`¿Eliminar el objetivo #${btn.dataset.delGoal}?`)) return;
+      try {
+        await api(`/api/goals/${btn.dataset.delGoal}`, { method: "DELETE" });
+        toast("Objetivo eliminado", "success");
+        await refreshPanel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    });
+  });
+}
+
+async function onSubmitGoal(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector("button[type=submit]");
+  const payload = {
+    name: $("#goal-name").value.trim(),
+    target_amount: parseFloat($("#goal-amount").value),
+    target_date: $("#goal-date").value || null,
+  };
+  setBusy(btn, true);
+  try {
+    await api("/api/goals", { method: "POST", body: JSON.stringify(payload) });
+    toast("Objetivo creado", "success");
+    e.target.reset();
+    await refreshPanel();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Presupuestos
+// ---------------------------------------------------------------------------
+
+async function loadBudgets() {
+  const rows = await api(`/api/budgets?mes=${state.budgetMonth}`);
+  renderBudgets(rows);
+  // La alerta del panel siempre refleja el mes en curso, no el que se esté
+  // revisando en la pestaña Metas.
+  if (state.budgetMonth === currentMonth()) {
+    renderBudgetAlerts(rows);
+  } else {
+    renderBudgetAlerts(await api(`/api/budgets?mes=${currentMonth()}`));
+  }
+}
+
+function renderBudgets(rows) {
+  const box = $("#budgets-list");
+  if (!rows.length) {
+    box.innerHTML = `<div class="no-data">No hay presupuestos cargados para este mes.</div>`;
+    return;
+  }
+  box.innerHTML = "";
+  for (const b of rows) {
+    const el = document.createElement("div");
+    el.className = `budget-card ${b.status}`;
+    const partes = [];
+    if (b.remaining_cents < 0) partes.push(`te pasaste por ${moneyFmt(Math.abs(b.remaining))}`);
+    else partes.push(`quedan ${moneyFmt(b.remaining)}`);
+    if (b.days_left) partes.push(`faltan ${b.days_left} días`);
+    if (b.projected_cents > b.limit_cents && b.status !== "excedido") {
+      partes.push(`a este ritmo terminás el mes en ${moneyFmt(b.projected)}`);
+    }
+    const icon = b.status === "excedido" ? "🔴" : b.status === "atencion" ? "🟡" : "🟢";
+    el.innerHTML = `
+      <div class="goal-head">
+        <div>
+          <div class="goal-name">${icon} ${esc(b.category)}</div>
+          <div class="muted small">${partes.map(esc).join(" · ")}</div>
+        </div>
+        <button class="btn ghost small-btn" data-del-budget="${b.id}" title="Eliminar presupuesto">✕</button>
+      </div>
+      <div class="bar-track goal-track">
+        <div class="bar-fill" style="width:${Math.min(b.percent, 100)}%"></div>
+      </div>
+      <div class="bar-top">
+        <span class="num"><strong>${moneyFmt(b.spent)}</strong> de ${moneyFmt(b.limit)}</span>
+        <span class="muted">${pct(b.percent)}</span>
+      </div>`;
+    box.appendChild(el);
+  }
+  box.querySelectorAll("[data-del-budget]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`¿Eliminar el presupuesto #${btn.dataset.delBudget}?`)) return;
+      try {
+        await api(`/api/budgets/${btn.dataset.delBudget}`, { method: "DELETE" });
+        toast("Presupuesto eliminado", "success");
+        await refreshPanel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    });
+  });
+}
+
+async function onSubmitBudget(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector("button[type=submit]");
+  const payload = {
+    category: $("#budget-category").value,
+    amount: parseFloat($("#budget-amount").value),
+  };
+  setBusy(btn, true);
+  try {
+    await api("/api/budgets", { method: "POST", body: JSON.stringify(payload) });
+    toast("Presupuesto guardado", "success");
+    $("#budget-amount").value = "";
+    await refreshPanel();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    setBusy(btn, false);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +460,7 @@ async function onSubmitTx(e) {
     type: $("#tx-type").value,
     amount,
     category: $("#tx-category").value,
+    goal: $("#tx-goal").value || null,
     description: $("#tx-description").value.trim(),
     date: $("#tx-date").value || null,
   };
@@ -210,7 +469,8 @@ async function onSubmitTx(e) {
     await api("/api/transactions", { method: "POST", body: JSON.stringify(payload) });
     toast("Movimiento registrado", "success");
     e.target.reset();
-    document.getElementById("tx-date").value = new Date().toISOString().slice(0, 10);
+    syncCategoryOptions();
+    $("#tx-date").value = new Date().toISOString().slice(0, 10);
     await refreshPanel();
   } catch (err) {
     toast(err.message, "error");
@@ -270,6 +530,7 @@ function renderPending(action) {
       state.pending = null;
       renderPending(null);
       handleAgentResponse(res);
+      await refreshPanel();
     } catch (err) {
       toast(err.message, "error");
       renderPending(null);
@@ -306,13 +567,14 @@ async function sendMessage(text) {
       body: JSON.stringify({ messages: state.chatMessages }),
     });
     if (res.reply) {
-      bubble.textContent = res.reply;
       bubble.innerHTML = esc(res.reply);
       state.chatMessages.push({ role: "assistant", content: res.reply });
     } else {
       bubble.remove();
     }
     handleAgentResponse(res);
+    // El agente pudo registrar o eliminar movimientos: el panel va detrás.
+    refreshPanel();
   } catch (err) {
     bubble.remove();
     appendMsg("error", `Error: ${esc(err.message)}`, "error");
@@ -333,12 +595,13 @@ function onSubmitChat(e) {
 // ---------------------------------------------------------------------------
 
 function initTabs() {
-  document.querySelectorAll(".tab").forEach((btn) => {
+  $$(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+      $$(".tab").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      $("#view-panel").classList.toggle("hidden", btn.dataset.view !== "panel");
-      $("#view-agent").classList.toggle("hidden", btn.dataset.view !== "agent");
+      $$("main section").forEach((sec) => {
+        sec.classList.toggle("hidden", sec.id !== `view-${btn.dataset.view}`);
+      });
     });
   });
 }
@@ -353,10 +616,18 @@ async function init() {
     state.period = e.target.value;
     refreshPanel();
   });
+  $("#tx-type").addEventListener("change", syncCategoryOptions);
   $("#tx-form").addEventListener("submit", onSubmitTx);
+  $("#goal-form").addEventListener("submit", onSubmitGoal);
+  $("#budget-form").addEventListener("submit", onSubmitBudget);
+  $("#budget-month").addEventListener("change", (e) => {
+    state.budgetMonth = e.target.value || currentMonth();
+    loadBudgets();
+  });
   $("#chat-form").addEventListener("submit", onSubmitChat);
 
   $("#tx-date").value = new Date().toISOString().slice(0, 10);
+  $("#budget-month").value = state.budgetMonth;
 
   try {
     await loadConfig();

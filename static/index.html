@@ -13,6 +13,7 @@
       <h1>💰 Finanzas Personales</h1>
       <nav class="tabs">
         <button class="tab active" data-view="panel">Panel</button>
+        <button class="tab" data-view="metas">Metas 🎯</button>
         <button class="tab" data-view="agent">Agente 🤖</button>
       </nav>
     </div>
@@ -31,6 +32,8 @@
         </label>
         <span id="period-info" class="muted"></span>
       </div>
+
+      <div id="budget-alerts" class="hidden"></div>
 
       <div class="cards" id="summary-cards">
         <div class="card summary">
@@ -74,6 +77,11 @@
                 <input type="date" id="tx-date" name="date" />
               </label>
             </div>
+            <label>Ahorro
+              <select id="tx-goal" name="goal">
+                <option value="">— sin objetivo —</option>
+              </select>
+            </label>
             <label>Descripción
               <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
             </label>
@@ -107,6 +115,55 @@
       </div>
     </section>
 
+    <!-- ===================== METAS ===================== -->
+    <section id="view-metas" class="hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>Objetivos de ahorro</h2>
+          <p class="muted small">
+            El progreso se calcula de los movimientos que asignás a cada objetivo.
+            Cargá el aporte como un gasto normal eligiendo el objetivo en «Registrar movimiento».
+          </p>
+        </div>
+        <form id="goal-form" class="inline-form">
+          <label>Nombre
+            <input type="text" id="goal-name" required maxlength="80" placeholder="Fondo de emergencia" />
+          </label>
+          <label>Monto a juntar
+            <input type="number" id="goal-amount" step="0.01" min="0.01" required placeholder="1.200.000" />
+          </label>
+          <label>Fecha límite
+            <input type="date" id="goal-date" />
+          </label>
+          <button type="submit" class="btn primary">Crear objetivo</button>
+        </form>
+        <div id="goals-list" class="goal-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Presupuesto mensual</h2>
+          <p class="muted small">
+            El tope se aplica a cada mes calendario. La alerta se dispara al llegar al
+            <span id="alert-threshold">80%</span> del límite.
+          </p>
+        </div>
+        <form id="budget-form" class="inline-form">
+          <label>Categoría
+            <select id="budget-category" required></select>
+          </label>
+          <label>Monto por mes
+            <input type="number" id="budget-amount" step="0.01" min="0.01" required placeholder="300.000" />
+          </label>
+          <button type="submit" class="btn primary">Guardar presupuesto</button>
+          <label class="month-picker">Ver mes
+            <input type="month" id="budget-month" />
+          </label>
+        </form>
+        <div id="budgets-list" class="budget-list"></div>
+      </div>
+    </section>
+
     <!-- ===================== AGENTE ===================== -->
     <section id="view-agent" class="hidden">
       <div class="card chat-card">
@@ -121,12 +178,13 @@
           <input
             id="chat-input"
             type="text"
-            placeholder='Ej: "¿Cuál es mi balance este mes?"'
+            placeholder='Ej: "¿Cómo vengo con los presupuestos?"'
             autocomplete="off" />
           <button type="submit" class="btn primary">Enviar</button>
         </form>
         <p class="muted small chat-hints">
           Probá: <em>¿cuál es mi balance?</em> · <em>resumí mis gastos por categoría</em> ·
+          <em>¿cómo vengo con mis presupuestos?</em> · <em>¿cuánto llevo del fondo de emergencia?</em> ·
           <em>registrá un gasto de 75.000 en Motos</em> (pide confirmación) ·
           <em>eliminá la transacción 1</em> (pide confirmación)
         </p>

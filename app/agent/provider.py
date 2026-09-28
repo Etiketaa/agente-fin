@@ -19,6 +19,16 @@ class ToolCall:
     arguments: dict
 
 
+class ProviderError(RuntimeError):
+    """Falla del proveedor de LLM (red, timeout, 5xx, auth, rate limit).
+
+    Se traduce a un mensaje entendible en la capa de API, para que un problema
+    externo se vea como "el proveedor no respondió" y no como un error 500
+    propio con un traceback. El detalle técnico queda encadenado en `__cause__`
+    para el log del servidor.
+    """
+
+
 class MockProvider:
     """Modo demo: respuestas simuladas por reglas, sin API key ni costo."""
 
@@ -38,6 +48,10 @@ class MockProvider:
 
         if any(k in text for k in ("balance", "saldo")):
             return None, [ToolCall("calcular_balance", {})]
+        if any(k in text for k in ("objetivo", "meta", "ahorro", "ahorrar")):
+            return None, [ToolCall("listar_objetivos", {})]
+        if "presupuesto" in text or "presupuestos" in text:
+            return None, [ToolCall("listar_presupuestos", {})]
         if "resumen" in text or "categor" in text:
             return None, [ToolCall("resumen_por_categoria", {})]
         if any(k in text for k in ("transacciones", "movimientos", "list")):
@@ -57,8 +71,9 @@ class MockProvider:
 
         return (
             "Modo demo activo (respondo sin API key). Podés pedirme tu balance, "
-            "un resumen por categoría, tus transacciones, registrar un gasto o eliminar "
-            "una transacción. Para respuestas reales configurá OPENAI_API_KEY (ver README).",
+            "un resumen por categoría, tus transacciones, tus objetivos de ahorro, "
+            "cómo venís con los presupuestos, registrar un gasto o eliminar una "
+            "transacción. Para respuestas reales configurá OPENAI_API_KEY (ver README).",
             None,
         )
 
@@ -76,12 +91,17 @@ class OpenAIProvider:
         self.model = model
 
     def chat(self, messages: list[dict], tools: list[dict] | None):
-        resp = self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            tools=tools or None,
-            temperature=0.2,
-        )
+        from openai import APIError
+
+        try:
+            resp = self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=tools or None,
+                temperature=0.2,
+            )
+        except APIError as exc:
+            raise ProviderError(_friendly_provider_error(exc)) from exc
         msg = resp.choices[0].message
         text = msg.content
         tool_calls: list[ToolCall] = []
@@ -94,6 +114,30 @@ class OpenAIProvider:
                 args = {}
             tool_calls.append(ToolCall(tc.function.name, args))
         return text, tool_calls
+
+
+def _friendly_provider_error(exc: Exception) -> str:
+    """Traduce una excepción del SDK a un mensaje que el usuario pueda usar."""
+    from openai import (
+        APIConnectionError,
+        APIStatusError,
+        AuthenticationError,
+        APITimeoutError,
+        RateLimitError,
+    )
+
+    if isinstance(exc, AuthenticationError):
+        return ("Credenciales del proveedor inválidas. Revisá OPENAI_API_KEY en .env.")
+    if isinstance(exc, RateLimitError):
+        return ("El proveedor está limitando las requests. Esperá unos segundos y reintentá.")
+    if isinstance(exc, APITimeoutError):
+        return ("El proveedor tardó demasiado en responder. Reintentá en un momento.")
+    if isinstance(exc, APIConnectionError):
+        return f"No se pudo conectar con el proveedor: {exc.__class__.__name__}."
+    if isinstance(exc, APIStatusError):
+        return (f"El proveedor respondió con un error {exc.status_code}. "
+                "Suele ser un problema momentáneo del servicio: reintentá.")
+    return f"Error inesperado del proveedor: {exc}"
 
 
 def get_provider():

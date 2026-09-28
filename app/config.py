@@ -26,6 +26,7 @@ class Settings:
     openai_model: str
     llm_provider: str  # "mock" | "openai"
     sensitive_amount: float  # en unidades de moneda (no centavos)
+    budget_alert_pct: float  # fracción del presupuesto que dispara la alerta (0.8 = 80%)
     host: str
     port: int
 
@@ -42,6 +43,7 @@ def get_settings() -> Settings:
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         llm_provider=provider,
         sensitive_amount=float(os.getenv("SENSITIVE_AMOUNT", "50000")),
+        budget_alert_pct=float(os.getenv("BUDGET_ALERT_PCT", "0.8")),
         host=os.getenv("HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", "8000")),
     )
