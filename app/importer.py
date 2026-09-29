@@ -120,6 +120,8 @@ class LocalClassifier:
 
     def train(self, db: Session) -> int:
         """Entrena con todas las transacciones existentes que tengan categoría."""
+        if not _SKLEARN_OK:
+            return 0
         txs = db.scalars(
             select(Transaction).join(Category).where(Transaction.category_id.is_not(None))
         ).all()
