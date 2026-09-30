@@ -178,6 +178,25 @@ consolida en un solo lugar, de lo más urgente a lo menos:
 El agente usa la misma función vía `listar_alertas`: lo que ves en el panel
 es lo que te dice el chat. Preguntale *"¿qué tengo pendiente?"*.
 
+## Usuarios y autenticación
+
+Cada usuario ve **solo sus datos**: registro con `POST /api/auth/register`
+(devuelve un token), login con `POST /api/auth/login`, y el resto de los
+endpoints exige `Authorization: Bearer <token>` (sin token → 401).
+
+Detalles deliberados:
+
+- Contraseñas con PBKDF2-SHA256 de la stdlib (sin dependencias nuevas) y
+  sesiones como tokens opacos **revocables** (`POST /api/auth/logout`).
+  En la base solo hay hashes, nunca secretos en claro.
+- El login devuelve el mismo 401 exista o no el usuario: no filtramos quién
+  está registrado.
+- Borrar o leer un ID ajeno devuelve **404, no 403**: ni siquiera se confirma
+  que ese registro exista.
+- Las categorías son por usuario (mismo set inicial, después divergen).
+- El agente opera siempre como el usuario del token: categorías del prompt,
+  queries y clasificador CSV están scopeados por `user_id`.
+
 ## Modelo intercambiable (punto clave de la arquitectura)
 
 Todo el sistema habla con `app/agent/provider.py`. Cambiar de modelo es editar
@@ -217,7 +236,9 @@ finanzas/
 ├── app/
 │   ├── config.py          # configuración vía .env
 │   ├── db.py              # motor + sesiones (SQLite → PostgreSQL después)
-│   ├── models.py          # Category, Transaction, SavingsGoal, Budget, Bill, Vehicle (centavos)
+│   ├── models.py          # User, Category, Transaction, SavingsGoal, Budget, Bill, Vehicle (centavos)
+│   ├── auth.py            # hashing PBKDF2 + tokens opacos (stdlib, sin deps)
+│   ├── seed.py            # categorías iniciales por usuario
 │   ├── schemas.py         # contratos Pydantic de la API
 │   ├── analytics.py       # ← saldos, metas, presupuestos, vencimientos y alertas
 │   ├── importer.py        # ← importar CSV + clasificador local (TF-IDF)
@@ -240,7 +261,7 @@ finanzas/
 │   └── app.js
 ├── scripts/
 │   ├── demo.py            # datos de ejemplo (opcional)
-│   ├── smoke.py           # regresión end-to-end (~55 chequeos)
+│   ├── smoke.py           # regresión end-to-end (65 chequeos, incluye auth y aislamiento)
 │   └── prove_provider.py  # prueba real contra el proveedor configurado
 └── requirements.txt
 ```
@@ -284,6 +305,16 @@ finanzas/
 - **Un solo centro de alertas** (`all_alerts` en `analytics.py`): el banner del
   panel y `listar_alertas` del agente no pueden discrepar porque son la misma
   llamada con distinto formato (JSON vs texto).
+- **Aislamiento por `user_id`, no por convención**: toda tabla de dominio
+  tiene `user_id` con borrado en cascada, y los lookups por ID verifican dueño
+  (`_owned`: 404 si no es tuyo). Un `WHERE` olvidado es un leak, así que el
+  smoke tiene checks de aislamiento A-vs-B en API y en agente.
+- **SQLite por defecto, PostgreSQL cambiando la URL**: verificado de punta a
+  punta (smoke completo en verde) contra PostgreSQL 16 local con
+  `DATABASE_URL=postgresql+psycopg://...`. El driver es `psycopg[binary]`.
+- **Sesiones sin JWT**: un token opaco en `user_sessions` alcanza y sobra para
+  este tamaño; se revoca con un DELETE en vez de manejar expiraciones y
+  refresh tokens. Si algún día hay app móvil con "recordarme", ahí sí JWT.
 
 ## Roadmap
 
@@ -297,7 +328,9 @@ Hecho:
 4. ✅ **Detección de gastos que se disparan** (vs media histórica por categoría).
 5. ✅ **Alertas y tareas automáticas** (vencimientos únicos/mensuales con pago
    que genera el gasto, + centro de alertas unificado panel/agente).
+6. ✅ **Autenticación + multiusuario** (usuarios con token, aislamiento total
+   por `user_id`, categorías por usuario, verificado en SQLite y PostgreSQL).
 
-Siguiente:
-
-6. **Autenticación + multiusuario** (el paso a PostgreSQL y a "sistema para clientes").
+Roadmap completo. Posibles siguientes (no definidos): app móvil / PWA con
+login persistente, rate-limit al login, expiración de sesiones, roles
+(admin), exportar/importar por usuario.

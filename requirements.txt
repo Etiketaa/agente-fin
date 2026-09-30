@@ -4,3 +4,5 @@ sqlalchemy>=2.0
 openai>=1.40
 python-dotenv>=1.0
 scikit-learn>=1.3
+# Driver PostgreSQL (solo se usa si DATABASE_URL apunta a postgres)
+psycopg[binary]>=3.1
