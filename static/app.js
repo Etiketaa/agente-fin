@@ -58,17 +58,31 @@ function periodRange() {
   return {};
 }
 
+const TOKEN_KEY = "finanzas_token";
+const USER_KEY = "finanzas_user";
+
+function authHeaders() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     ...opts,
   });
+  // opts.headers pisa los defaults si el llamador pasa los suyos
   if (!res.ok) {
     let detail = `Error ${res.status}`;
     try {
       const body = await res.json();
       detail = body.detail || detail;
     } catch (_) { /* sin cuerpo JSON */ }
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      // Sesión vencida o revocada: volver al login sin romper la página.
+      logoutUI();
+      throw new Error("Sesión vencida. Iniciá sesión de nuevo.");
+    }
     throw new Error(detail);
   }
   if (res.status === 204) return null;
@@ -689,6 +703,83 @@ function onSubmitChat(e) {
 }
 
 // ---------------------------------------------------------------------------
+// Autenticación
+// ---------------------------------------------------------------------------
+
+let authMode = "login";
+
+function showAuth() {
+  $("#auth-screen").classList.remove("hidden");
+  $("#main-container").classList.add("hidden");
+  $("#user-box").classList.add("hidden");
+}
+
+function enterApp(username) {
+  $("#auth-screen").classList.add("hidden");
+  $("#main-container").classList.remove("hidden");
+  $("#user-box").classList.remove("hidden");
+  $("#user-name").textContent = username || localStorage.getItem(USER_KEY) || "";
+}
+
+function logoutUI() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  state.pending = null;
+  state.chatMessages = [];
+  showAuth();
+}
+
+async function onSubmitAuth(e) {
+  e.preventDefault();
+  const btn = $("#auth-submit");
+  const err = $("#auth-error");
+  err.classList.add("hidden");
+  const payload = {
+    username: $("#auth-username").value.trim(),
+    password: $("#auth-password").value,
+  };
+  setBusy(btn, true);
+  try {
+    const res = await api(`/api/auth/${authMode}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    localStorage.setItem(TOKEN_KEY, res.token);
+    localStorage.setItem(USER_KEY, res.username);
+    e.target.reset();
+    enterApp(res.username);
+    await loadConfig();
+    await loadCategories();
+    await refreshPanel();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.classList.remove("hidden");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+async function onLogout() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch (_) { /* igual salimos */ }
+  logoutUI();
+  toast("Sesión cerrada", "success");
+}
+
+function initAuthTabs() {
+  $$("[data-auth]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $$("[data-auth]").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      authMode = btn.dataset.auth;
+      $("#auth-submit").textContent = authMode === "login" ? "Entrar" : "Crear cuenta";
+      $("#auth-error").classList.add("hidden");
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
 
@@ -710,6 +801,10 @@ function initTabs() {
 
 async function init() {
   initTabs();
+  initAuthTabs();
+  $("#auth-form").addEventListener("submit", onSubmitAuth);
+  $("#logout-btn").addEventListener("click", onLogout);
+  // Los listeners se bindean siempre: el login posterior los necesita.
   $("#period-select").addEventListener("change", (e) => {
     state.period = e.target.value;
     refreshPanel();
@@ -728,6 +823,11 @@ async function init() {
   $("#tx-date").value = new Date().toISOString().slice(0, 10);
   $("#budget-month").value = state.budgetMonth;
 
+  if (!localStorage.getItem(TOKEN_KEY)) {
+    showAuth();
+    return;
+  }
+  enterApp();
   try {
     await loadConfig();
     await loadCategories();

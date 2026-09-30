@@ -285,6 +285,32 @@ tr:hover td { background: #f8fafc; }
 .btn.confirm { background: #f59e0b; color: #fff; }
 .btn.confirm:hover { background: #d97706; }
 
+/* ---------- Auth ---------- */
+#auth-screen {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+#auth-screen.hidden { display: none !important; }
+.auth-card { width: 100%; max-width: 380px; }
+.auth-card h2 { margin: 0 0 4px; }
+.auth-tabs { margin: 12px 0 16px; }
+.tab.dark { border-color: var(--border); color: var(--text); }
+.tab.dark.active { background: var(--text); border-color: var(--text); color: #fff; }
+.auth-error {
+  background: #fef2f2;
+  color: var(--expense);
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+.user-box { display: flex; align-items: center; gap: 10px; }
+.user-name { font-size: 0.85rem; opacity: 0.9; }
+.user-name::before { content: "👤 "; }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;

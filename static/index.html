@@ -16,10 +16,38 @@
         <button class="tab" data-view="metas">Metas 🎯</button>
         <button class="tab" data-view="agent">Agente 🤖</button>
       </nav>
+      <div class="user-box hidden" id="user-box">
+        <span id="user-name" class="user-name"></span>
+        <button class="tab" id="logout-btn" title="Cerrar sesión">Salir</button>
+      </div>
     </div>
   </header>
 
-  <main class="container">
+  <!-- Pantalla de acceso: se muestra si no hay sesión iniciada -->
+  <div id="auth-screen" class="hidden">
+    <div class="card auth-card">
+      <h2>💰 Finanzas Personales</h2>
+      <p class="muted small">Cada usuario ve solo sus propios datos.</p>
+      <div class="tabs auth-tabs">
+        <button class="tab dark active" data-auth="login">Entrar</button>
+        <button class="tab dark" data-auth="register">Crear cuenta</button>
+      </div>
+      <form id="auth-form" class="tx-form">
+        <label>Usuario
+          <input type="text" id="auth-username" required minlength="3" maxlength="40"
+                 autocomplete="username" placeholder="franco" />
+        </label>
+        <label>Contraseña
+          <input type="password" id="auth-password" required minlength="8" maxlength="200"
+                 autocomplete="current-password" placeholder="mínimo 8 caracteres" />
+        </label>
+        <div id="auth-error" class="auth-error hidden"></div>
+        <button type="submit" class="btn primary" id="auth-submit">Entrar</button>
+      </form>
+    </div>
+  </div>
+
+  <main class="container" id="main-container">
     <!-- ===================== PANEL ===================== -->
     <section id="view-panel">
       <div class="toolbar">
