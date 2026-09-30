@@ -316,6 +316,39 @@ finanzas/
   este tamaño; se revoca con un DELETE en vez de manejar expiraciones y
   refresh tokens. Si algún día hay app móvil con "recordarme", ahí sí JWT.
 
+## Deploy en Vercel (para usarla en el celular)
+
+Vercel ejecuta la app como función serverless y **no tiene disco persistente**:
+SQLite ahí pierde los datos entre invocaciones. Por eso el deploy usa
+PostgreSQL manejado (Neon, gratis) y Vercel solo corre el código. El repo ya
+viene listo: Vercel detecta solo el entrypoint `app/main.py` (cero config de
+rutas; las de `/api/*` ganan al mount estático porque el router se declara
+antes) y `vercel.json` le da 60s a la función (el agente a veces tarda).
+
+Pasos (una sola vez):
+
+1. **Base de datos** en [Neon](https://neon.tech) (tier gratis): creá un
+   proyecto y una base `finanzas`. Copiá la **pooled connection string**
+   (termina en `-pooler...`) y agregale `?sslmode=require`:
+   `postgresql+psycopg://<user>:<pass>@<host-pooler>/finanzas?sslmode=require`
+2. **Repo en GitHub**: `gh repo create finanzas --private --source=. --push`
+   (o crealo en la web y `git remote add origin ... && git push -u origin main`).
+3. **Proyecto en Vercel**: importá el repo. Variables de entorno (Settings →
+   Environment Variables, marcar Production):
+   - `DATABASE_URL` = la de Neon de arriba (las tablas se crean solas al arrancar)
+   - `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` = las de tu `.env`
+   - `SENSITIVE_AMOUNT`, `BUDGET_ALERT_PCT`, `CURRENCY` = igual que tu `.env`
+4. **Deploy** y abrí la URL en el celular → *Agregar a pantalla de inicio*
+   (el `manifest.json` hace que abra a pantalla completa).
+
+Notas:
+
+- Sin `DATABASE_URL` la app igual arranca pero **pierde los datos**: no usar
+  SQLite en Vercel salvo para probar.
+- Primer paso en la app deployada: crear tu cuenta (cada usuario ve solo lo suyo).
+- El plan Hobby de Vercel duerme la función sin tráfico: la primera carga
+  tarda unos segundos (cold start + lifespan). Después vuela.
+
 ## Roadmap
 
 Hecho:

@@ -1,0 +1,10 @@
+{
+  "name": "Finanzas Personales",
+  "short_name": "Finanzas",
+  "description": "Finanzas personales con agente: movimientos, metas, presupuestos y vencimientos.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#0f172a",
+  "lang": "es"
+}
