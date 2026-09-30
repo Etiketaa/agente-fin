@@ -201,17 +201,19 @@ tr:hover td { background: #f8fafc; }
 .inline-form .btn { flex: 0 0 auto; }
 .month-picker { flex: 0 0 auto !important; }
 
-/* ---------- Objetivos y presupuestos ---------- */
-.goal-list, .budget-list { display: flex; flex-direction: column; gap: 12px; }
+/* ---------- Objetivos, presupuestos y vencimientos ---------- */
+.goal-list, .budget-list, .bill-list { display: flex; flex-direction: column; gap: 12px; }
 
-.goal-card, .budget-card {
+.goal-card, .budget-card, .bill-card {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px 16px;
 }
-.goal-card.vencido, .budget-card.excedido { border-color: #fecaca; background: #fef2f2; }
+.goal-card.vencido, .budget-card.excedido, .bill-card.vencido { border-color: #fecaca; background: #fef2f2; }
 .goal-card.alcanzado { border-color: #bbf7d0; background: #f0fdf4; }
-.budget-card.atencion { border-color: #fde68a; background: #fffbeb; }
+.budget-card.atencion, .bill-card.proximo { border-color: #fde68a; background: #fffbeb; }
+.bill-actions { display: flex; align-items: center; gap: 8px; }
+.small-btn { padding: 6px 12px; font-size: 0.82rem; }
 
 .goal-head {
   display: flex;

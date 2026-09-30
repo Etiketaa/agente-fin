@@ -117,6 +117,7 @@ async function loadCategories() {
   state.categories = await api("/api/categories");
   syncCategoryOptions();
   syncBudgetCategories();
+  syncBillCategories();
 }
 
 // El selector de categoría depende del tipo elegido: una categoría de gasto no
@@ -224,27 +225,20 @@ async function renderTransactions() {
   });
 }
 
-function renderBudgetAlerts(rows) {
+async function loadAlerts() {
+  // Centro de alertas unificado: vencimientos, presupuestos, objetivos y
+  // anomalías salen de la misma función del backend que usa el agente.
   const box = $("#budget-alerts");
-  const alerts = rows.filter((b) => b.status !== "ok");
+  const alerts = await api("/api/alerts");
   if (!alerts.length) {
     box.classList.add("hidden");
     box.innerHTML = "";
     return;
   }
-  const month = alerts[0].month;
-  const items = alerts
-    .map((b) => {
-      const icon = b.status === "excedido" ? "🔴" : "🟡";
-      const detalle = b.remaining_cents < 0
-        ? `te pasaste por ${moneyFmt(Math.abs(b.remaining))}`
-        : `quedan ${moneyFmt(b.remaining)}`;
-      return `<li>${icon} <strong>${esc(b.category)}</strong> — ${pct(b.percent)} de ${moneyFmt(b.limit)} (${detalle})</li>`;
-    })
-    .join("");
+  const items = alerts.map((a) => `<li>${esc(a.message)}</li>`).join("");
   box.innerHTML = `
     <div class="alert-box">
-      <div class="alert-title">⚠️ Presupuestos — ${esc(month)}</div>
+      <div class="alert-title">⚠️ Requiere tu atención (${alerts.length})</div>
       <ul>${items}</ul>
     </div>`;
   box.classList.remove("hidden");
@@ -259,6 +253,8 @@ async function refreshPanel() {
     ["movimientos", renderTransactions],
     ["objetivos", loadGoals],
     ["presupuestos", loadBudgets],
+    ["vencimientos", loadBills],
+    ["alertas", loadAlerts],
   ];
   const fallos = await Promise.allSettled(tareas.map(([, fn]) => fn()));
   const errores = fallos
@@ -370,13 +366,8 @@ async function onSubmitGoal(e) {
 async function loadBudgets() {
   const rows = await api(`/api/budgets?mes=${state.budgetMonth}`);
   renderBudgets(rows);
-  // La alerta del panel siempre refleja el mes en curso, no el que se esté
-  // revisando en la pestaña Metas.
-  if (state.budgetMonth === currentMonth()) {
-    renderBudgetAlerts(rows);
-  } else {
-    renderBudgetAlerts(await api(`/api/budgets?mes=${currentMonth()}`));
-  }
+  // El banner del panel lo alimenta loadAlerts (/api/alerts), que ya incluye
+  // los presupuestos del mes en curso junto al resto de las alertas.
 }
 
 function renderBudgets(rows) {
@@ -440,6 +431,113 @@ async function onSubmitBudget(e) {
     await api("/api/budgets", { method: "POST", body: JSON.stringify(payload) });
     toast("Presupuesto guardado", "success");
     $("#budget-amount").value = "";
+    await refreshPanel();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vencimientos
+// ---------------------------------------------------------------------------
+
+function syncBillCategories() {
+  const select = $("#bill-category");
+  const prev = select.value;
+  select.innerHTML = "";
+  for (const c of state.categories) {
+    if (c.kind !== "expense") continue;
+    const opt = document.createElement("option");
+    opt.value = c.name;
+    opt.textContent = c.name;
+    select.appendChild(opt);
+  }
+  if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+}
+
+function billCuando(b) {
+  if (b.state === "vencido") return `venció hace ${-b.days_until} día(s)`;
+  if (b.days_until === 0) return "vence hoy";
+  if (b.days_until === 1) return "vence mañana";
+  return `vence en ${b.days_until} días (${esc(b.due_date)})`;
+}
+
+async function loadBills() {
+  const rows = await api("/api/bills");
+  const box = $("#bills-list");
+  syncBillCategories();
+  if (!rows.length) {
+    box.innerHTML = `<div class="no-data">Sin vencimientos pendientes. Agregá el primero arriba.</div>`;
+    return;
+  }
+  box.innerHTML = "";
+  for (const b of rows) {
+    const el = document.createElement("div");
+    el.className = `bill-card ${b.state}`;
+    const icon = b.state === "vencido" ? "🔴" : b.state === "proximo" ? "🟡" : "⚪";
+    const rec = b.recurrence === "monthly" ? " · mensual" : "";
+    el.innerHTML = `
+      <div class="goal-head">
+        <div>
+          <div class="goal-name">${icon} ${esc(b.description)}</div>
+          <div class="muted small">${billCuando(b)} · ${esc(b.category)}${esc(rec)}</div>
+        </div>
+        <div class="bill-actions">
+          <span class="num"><strong>${moneyFmt(b.amount)}</strong></span>
+          <button class="btn primary small-btn" data-pay-bill="${b.id}" title="Marcar como pagado (genera el gasto)">Pagar</button>
+          <button class="btn ghost small-btn" data-del-bill="${b.id}" title="Eliminar vencimiento">✕</button>
+        </div>
+      </div>`;
+    box.appendChild(el);
+  }
+  box.querySelectorAll("[data-pay-bill]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`¿Marcar como pagado y generar el gasto?`)) return;
+      try {
+        const res = await api(`/api/bills/${btn.dataset.payBill}/pay`, { method: "POST" });
+        toast(
+          res.next_bill
+            ? `Pagado. Se creó el siguiente para el ${res.next_bill.due_date}`
+            : "Pagado y gasto registrado",
+          "success"
+        );
+        await refreshPanel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    });
+  });
+  box.querySelectorAll("[data-del-bill]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`¿Eliminar el vencimiento #${btn.dataset.delBill}?`)) return;
+      try {
+        await api(`/api/bills/${btn.dataset.delBill}`, { method: "DELETE" });
+        toast("Vencimiento eliminado", "success");
+        await refreshPanel();
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    });
+  });
+}
+
+async function onSubmitBill(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector("button[type=submit]");
+  const payload = {
+    description: $("#bill-desc").value.trim(),
+    amount: parseFloat($("#bill-amount").value),
+    due_date: $("#bill-date").value,
+    category: $("#bill-category").value,
+    recurrence: $("#bill-recurrence").value,
+  };
+  setBusy(btn, true);
+  try {
+    await api("/api/bills", { method: "POST", body: JSON.stringify(payload) });
+    toast("Vencimiento agregado", "success");
+    e.target.reset();
     await refreshPanel();
   } catch (err) {
     toast(err.message, "error");
@@ -618,6 +716,7 @@ async function init() {
   });
   $("#tx-type").addEventListener("change", syncCategoryOptions);
   $("#tx-form").addEventListener("submit", onSubmitTx);
+  $("#bill-form").addEventListener("submit", onSubmitBill);
   $("#goal-form").addEventListener("submit", onSubmitGoal);
   $("#budget-form").addEventListener("submit", onSubmitBudget);
   $("#budget-month").addEventListener("change", (e) => {

@@ -86,21 +86,24 @@ class Cleanup:
         self.txs: list[int] = []
         self.goals: list[int] = []
         self.budgets: list[int] = []
+        self.bills: list[int] = []
 
     def run(self) -> None:
         for path, ids in (
             ("/api/transactions", self.txs),
             ("/api/goals", self.goals),
             ("/api/budgets", self.budgets),
+            ("/api/bills", self.bills),
         ):
             for i in ids:
                 try:
                     req("DELETE", f"{path}/{i}")
                 except Exception:
                     pass
-        if self.txs or self.goals or self.budgets:
+        if self.txs or self.goals or self.budgets or self.bills:
             print(f"\nLimpieza: {len(self.txs)} transacciones, "
-                  f"{len(self.goals)} objetivos, {len(self.budgets)} presupuestos borrados.")
+                  f"{len(self.goals)} objetivos, {len(self.budgets)} presupuestos, "
+                  f"{len(self.bills)} vencimientos borrados.")
 
 
 def main():
@@ -222,6 +225,59 @@ def _run(c: Cleanup):
           len([x for x in req("GET", "/api/budgets") if x["category"] == "Ocio"]) == 1)
     expect_error("no se puede presupuestar una categoría de ingreso",
                  lambda: req("POST", "/api/budgets", {"category": "Sueldo", "amount": 1000}), 400)
+
+    # ---------------------------------------------------------- vencimientos
+    print("\n[vencimientos]")
+    from datetime import date as _date, timedelta as _td
+    hoy = _date.today()
+    v1 = req("POST", "/api/bills", {
+        "description": "Tarjeta smoke", "amount": 80000,
+        "due_date": (hoy + _td(days=3)).isoformat(), "category": "Servicios",
+        "recurrence": "monthly"})
+    c.bills.append(v1["id"])
+    check(f"crea vencimiento #{v1['id']} en estado proximo", v1["state"] == "proximo")
+    check("days_until = 3", v1["days_until"] == 3)
+
+    v2 = req("POST", "/api/bills", {
+        "description": "Alquiler vencido smoke", "amount": 500000,
+        "due_date": (hoy - _td(days=2)).isoformat(), "category": "Vivienda"})
+    c.bills.append(v2["id"])
+    check("vencimiento pasado queda en estado vencido", v2["state"] == "vencido")
+
+    expect_error("no se puede cargar un vencimiento en categoría de ingreso",
+                 lambda: req("POST", "/api/bills", {
+                     "description": "Malo", "amount": 100,
+                     "due_date": hoy.isoformat(), "category": "Sueldo"}), 400)
+
+    pendientes = req("GET", "/api/bills")
+    check("lista solo pendientes", {x["id"] for x in pendientes} >= {v1["id"], v2["id"]})
+
+    alerts = req("GET", "/api/alerts")
+    kinds = {(a["kind"], a["severity"]) for a in alerts}
+    check("alertas incluyen el vencido en alta",
+          ("vencimiento", "alta") in kinds)
+    check("alertas incluyen el próximo en media",
+          ("vencimiento", "media") in kinds)
+
+    pago = req("POST", f"/api/bills/{v1['id']}/pay")
+    check("pagar genera el gasto", pago["transaction_id"] > 0)
+    c.txs.append(pago["transaction_id"])
+    check("el vencimiento queda pagado", pago["bill"]["state"] == "pagado")
+    check("el mensual genera el siguiente", pago["next_bill"] is not None
+          and pago["next_bill"]["state"] == "pendiente")
+    c.bills.append(pago["next_bill"]["id"])
+    gasto_pago = req("GET", "/api/transactions?limite=100")
+    check("el gasto del pago figura en movimientos",
+          any(t["id"] == pago["transaction_id"] for t in gasto_pago))
+
+    expect_error("pagar dos veces falla",
+                 lambda: req("POST", f"/api/bills/{v1['id']}/pay"), 409)
+    expect_error("pagar vencimiento inexistente",
+                 lambda: req("POST", "/api/bills/999999/pay"), 404)
+    check("eliminar vencimiento", req("DELETE", f"/api/bills/{v2['id']}") is None)
+    c.bills.remove(v2["id"])
+    expect_error("vencimiento inexistente",
+                 lambda: req("DELETE", f"/api/bills/{v2['id']}"), 404)
 
     # ------------------------------------------------------------------ agente
     print(f"\n[agente — proveedor {cfg['provider']}]")

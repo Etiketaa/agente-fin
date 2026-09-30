@@ -52,6 +52,10 @@ class MockProvider:
             return None, [ToolCall("listar_objetivos", {})]
         if "presupuesto" in text or "presupuestos" in text:
             return None, [ToolCall("listar_presupuestos", {})]
+        if any(k in text for k in ("vencimiento", "vence", "vencer", "pagar", "cuota", "alquiler", "tarjeta")):
+            return None, [ToolCall("listar_vencimientos", {})]
+        if any(k in text for k in ("alerta", "pendiente", "atención", "atencion", "urgente")):
+            return None, [ToolCall("listar_alertas", {})]
         if "resumen" in text or "categor" in text:
             return None, [ToolCall("resumen_por_categoria", {})]
         if any(k in text for k in ("transacciones", "movimientos", "list")):

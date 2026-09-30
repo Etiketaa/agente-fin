@@ -77,6 +77,29 @@ class SavingsGoal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class Bill(Base):
+    """Vencimiento: un pago futuro con fecha (tarjeta, alquiler, seguro...).
+
+    El estado no se guarda: se deriva de `paid_at` y de `due_date` (ver
+    `app.analytics.bill_rows`). Pagar un vencimiento genera el movimiento de
+    gasto correspondiente; si es mensual, además crea el vencimiento siguiente.
+    """
+
+    __tablename__ = "bills"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    description: Mapped[str] = mapped_column(String(200))
+    amount_cents: Mapped[int] = mapped_column(Integer)  # centavos, nunca float
+    due_date: Mapped[date] = mapped_column(Date, index=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
+    recurrence: Mapped[str] = mapped_column(String(10), default="once")  # "once" | "monthly"
+    paid_at: Mapped[date | None] = mapped_column(Date, nullable=True, default=None)
+    notes: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    category: Mapped[Category] = relationship()
+
+
 class Budget(Base):
     """Presupuesto mensual de una categoría.
 

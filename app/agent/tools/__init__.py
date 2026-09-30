@@ -13,7 +13,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
-from . import budgets, goals, imports, transactions, vehicles
+from . import bills, budgets, goals, imports, transactions, vehicles
 from .base import cents_to_money, fmt, fmt_amount, money_to_cents  # re-exportados
 
 __all__ = [
@@ -32,7 +32,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _IMPLS: dict[str, object] = {}
-for _module in (transactions, goals, budgets, vehicles, imports):
+for _module in (transactions, goals, budgets, vehicles, imports, bills):
     _IMPLS.update(_module.IMPLS)
 
 # ---------------------------------------------------------------------------
@@ -48,6 +48,7 @@ TOOLS = [
     *budgets.SCHEMAS,
     *vehicles.SCHEMAS,
     *imports.SCHEMAS,
+    *bills.SCHEMAS,
 ]
 
 # Toda herramienta destructiva pasa por acá, sin excepción.
@@ -57,6 +58,8 @@ _SIEMPRE_SENSIBLE = {
     "eliminar_presupuesto",
     "eliminar_vehiculo",
     "importar_csv",  # escribe muchos registros de una
+    "pagar_vencimiento",  # genera un gasto real + cambia estado
+    "eliminar_vencimiento",
 }
 
 # Escrituras que se frenan a partir de cierto monto.
@@ -132,5 +135,20 @@ def summarize_action(name: str, args: dict) -> str:
 
     if name == "importar_csv":
         return f"Importar movimientos desde «{args.get('archivo')}»"
+
+    if name == "crear_vencimiento":
+        texto = (
+            f"Crear el vencimiento «{args.get('descripcion')}» por "
+            f"{fmt_amount(args.get('monto'))} para el {args.get('fecha')}"
+        )
+        if str(args.get("recurrencia", "once")).lower() == "monthly":
+            texto += " (mensual)"
+        return texto
+
+    if name == "pagar_vencimiento":
+        return f"Pagar el vencimiento #{args.get('id')} (genera el gasto correspondiente)"
+
+    if name == "eliminar_vencimiento":
+        return f"Eliminar el vencimiento #{args.get('id')}"
 
     return f"Ejecutar {name} con {args}"

@@ -27,6 +27,10 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     },
     "savings_goals": {"id", "name", "target_cents", "target_date", "notes", "created_at"},
     "budgets": {"id", "category_id", "amount_cents", "rollover_cents", "created_at"},
+    "bills": {
+        "id", "description", "amount_cents", "due_date", "category_id",
+        "recurrence", "paid_at", "notes", "created_at",
+    },
 }
 
 

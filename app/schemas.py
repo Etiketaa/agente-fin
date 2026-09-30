@@ -108,6 +108,45 @@ class BudgetOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Vencimientos
+# ---------------------------------------------------------------------------
+
+class BillCreate(BaseModel):
+    description: str = Field(min_length=1, max_length=200)
+    amount: float = Field(gt=0, description="Monto a pagar, en unidades de moneda")
+    due_date: Date = Field(description="Fecha de vencimiento YYYY-MM-DD")
+    category: str = Field(description="Categoría de gasto a la que se imputa al pagar")
+    recurrence: Literal["once", "monthly"] = "once"
+    notes: str = ""
+
+
+class BillOut(BaseModel):
+    id: int
+    description: str
+    amount: float
+    amount_cents: int
+    due_date: Date
+    category: str
+    recurrence: str  # "once" | "monthly"
+    notes: str
+    state: str  # "pagado" | "vencido" | "proximo" | "pendiente"
+    days_until: int  # negativo si ya venció
+    paid_at: Date | None = None
+
+
+class BillPayOut(BaseModel):
+    bill: BillOut
+    transaction_id: int
+    next_bill: BillOut | None = None  # el siguiente, si era mensual
+
+
+class AlertOut(BaseModel):
+    severity: str  # "alta" | "media" | "baja"
+    kind: str  # "vencimiento" | "presupuesto" | "objetivo" | "anomalia"
+    message: str
+
+
+# ---------------------------------------------------------------------------
 # Agente
 # ---------------------------------------------------------------------------
 

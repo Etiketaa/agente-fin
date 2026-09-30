@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import Budget, Category, SavingsGoal, Transaction, Vehicle
+from .models import Bill, Budget, Category, SavingsGoal, Transaction, Vehicle
 
 # Estados posibles de un presupuesto dentro de su mes.
 OK = "ok"
@@ -29,6 +29,20 @@ EXCEDIDO = "excedido"
 EN_CURSO = "en_curso"
 ALCANZADO = "alcanzado"
 VENCIDO = "vencido"
+
+# Estados derivados de un vencimiento.
+PAGADO = "pagado"
+PENDIENTE = "pendiente"
+PROXIMO = "proximo"  # vence dentro de la ventana de aviso
+BILL_VENCIDO = "vencido"
+
+# Un vencimiento avisa cuando faltan estos días o menos.
+BILL_ALERT_DAYS = 7
+
+# Severidades del centro de alertas.
+ALTA = "alta"
+MEDIA = "media"
+BAJA = "baja"
 
 
 # ---------------------------------------------------------------------------
@@ -349,3 +363,151 @@ def detect_anomalies(db: Session, month: str | None = None, threshold_pct: float
     # Ordenar por desviación descendente (lo más anómalo primero)
     anomalies.sort(key=lambda a: -a.deviation_pct)
     return anomalies
+
+
+# ---------------------------------------------------------------------------
+# Vencimientos
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BillRow:
+    id: int
+    description: str
+    amount_cents: int
+    due_date: date
+    category: str
+    recurrence: str  # "once" | "monthly"
+    notes: str
+    state: str  # "pagado" | "vencido" | "proximo" | "pendiente"
+    days_until: int  # negativo si ya venció
+
+
+def _bill_row(bill: Bill, today: date) -> BillRow:
+    days = (bill.due_date - today).days
+    if bill.paid_at is not None:
+        state = PAGADO
+    elif days < 0:
+        state = BILL_VENCIDO
+    elif days <= BILL_ALERT_DAYS:
+        state = PROXIMO
+    else:
+        state = PENDIENTE
+    return BillRow(
+        id=bill.id,
+        description=bill.description,
+        amount_cents=bill.amount_cents,
+        due_date=bill.due_date,
+        category=bill.category.name,
+        recurrence=bill.recurrence,
+        notes=bill.notes or "",
+        state=state,
+        days_until=days,
+    )
+
+
+def bill_rows(db: Session, solo_pendientes: bool = True) -> list[BillRow]:
+    """Vencimientos con su estado derivado, ordenados por fecha.
+
+    Por defecto solo los no pagados (lo que importa en el día a día); con
+    `solo_pendientes=False` incluye el historial de pagados.
+    """
+    today = date.today()
+    q = select(Bill).join(Category)
+    if solo_pendientes:
+        q = q.where(Bill.paid_at.is_(None))
+    bills = db.scalars(q.order_by(Bill.due_date, Bill.id)).all()
+    return [_bill_row(b, today) for b in bills]
+
+
+def add_months(d: date, months: int = 1) -> date:
+    """Suma meses cuidando el fin de mes (31/01 + 1 mes → 28/02)."""
+    total = d.month - 1 + months
+    year, month = d.year + total // 12, total % 12 + 1
+    last = calendar.monthrange(year, month)[1]
+    return date(year, month, min(d.day, last))
+
+
+# ---------------------------------------------------------------------------
+# Centro de alertas (una sola fuente para el panel y el agente)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class AlertRow:
+    severity: str  # "alta" | "media" | "baja"
+    kind: str  # "vencimiento" | "presupuesto" | "objetivo" | "anomalia"
+    message: str
+
+
+def all_alerts(db: Session) -> list[AlertRow]:
+    """Consolida todo lo que requiere atención, lo más urgente primero.
+
+    La comparten el banner del panel (`GET /api/alerts`) y el agente
+    (`listar_alertas`): no hay dos cálculos que puedan discrepar.
+    """
+    # Import diferido: fmt vive en la capa de herramientas (que consume este
+    # módulo), así evitamos un import circular a nivel de módulo. Los montos
+    # se formatean igual que en el resto de las respuestas del agente.
+    from .agent.tools.base import fmt
+
+    alerts: list[AlertRow] = []
+    today = date.today()
+
+    # 1. Vencimientos: vencidos (alta) y próximos (media).
+    for b in bill_rows(db):
+        if b.state == BILL_VENCIDO:
+            alerts.append(AlertRow(
+                ALTA, "vencimiento",
+                f"🔴 Venció hace {-b.days_until} día(s): «{b.description}» "
+                f"por {fmt(b.amount_cents)} ({b.category}).",
+            ))
+        elif b.state == PROXIMO:
+            alerts.append(AlertRow(
+                MEDIA, "vencimiento",
+                f"🟡 Vence en {b.days_until} día(s) ({b.due_date.isoformat()}): "
+                f"«{b.description}» por {fmt(b.amount_cents)} ({b.category}).",
+            ))
+
+    # 2. Presupuestos del mes en curso.
+    for r in budget_alerts(budget_rows(db)):
+        if r.status == EXCEDIDO:
+            alerts.append(AlertRow(
+                ALTA, "presupuesto",
+                f"🔴 {r.category} excedido: gastado {fmt(r.spent_cents)} "
+                f"de {fmt(r.effective_limit_cents)}.",
+            ))
+        else:
+            alerts.append(AlertRow(
+                MEDIA, "presupuesto",
+                f"🟡 {r.category} al {r.percent:.0f}% del presupuesto "
+                f"(quedan {fmt(r.remaining_cents)}, faltan {r.days_left} días).",
+            ))
+
+    # 3. Objetivos: vencidos (alta) y con fecha dentro de 30 días sin alcanzar (media).
+    for g in goal_rows(db):
+        if g.status == VENCIDO:
+            alerts.append(AlertRow(
+                ALTA, "objetivo",
+                f"🔴 El objetivo «{g.name}» venció sin completarse "
+                f"({fmt(g.saved_cents)} de {fmt(g.target_cents)}).",
+            ))
+        elif (g.status == EN_CURSO and g.target_date
+                and 0 <= (g.target_date - today).days <= 30):
+            alerts.append(AlertRow(
+                MEDIA, "objetivo",
+                f"🟡 «{g.name}» vence el {g.target_date.isoformat()}: "
+                f"faltan {fmt(g.remaining_cents)}.",
+            ))
+
+    # 4. Anomalías del mes (media, resumidas en una línea).
+    anomalies = detect_anomalies(db)
+    if anomalies:
+        top = anomalies[0]
+        alerts.append(AlertRow(
+            MEDIA, "anomalia",
+            f"🟡 {len(anomalies)} gasto(s) fuera de lo habitual; el mayor: "
+            f"«{top.description}» en {top.category} (+{top.deviation_pct:.0f}% "
+            f"sobre su media).",
+        ))
+
+    order = {ALTA: 0, MEDIA: 1, BAJA: 2}
+    return sorted(alerts, key=lambda a: (order[a.severity], a.kind))

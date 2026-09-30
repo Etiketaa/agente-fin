@@ -14,11 +14,15 @@ from .agent.provider import ProviderError, get_provider
 from .agent.tools import cents_to_money, money_to_cents
 from .config import get_settings
 from .db import get_db
-from .models import Budget, Category, SavingsGoal, Transaction
+from .models import Bill, Budget, Category, SavingsGoal, Transaction
 from .schemas import (
     AgentChatRequest,
     AgentConfirmRequest,
     AgentResponse,
+    AlertOut,
+    BillCreate,
+    BillOut,
+    BillPayOut,
     BudgetCreate,
     BudgetOut,
     CategoryOut,
@@ -221,6 +225,130 @@ def delete_budget(bid: int, db: Session = Depends(get_db)):
     db.delete(budget)
     db.commit()
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Vencimientos
+# ---------------------------------------------------------------------------
+
+def _bill_out(row: analytics.BillRow, paid_at=None) -> BillOut:
+    return BillOut(
+        id=row.id,
+        description=row.description,
+        amount=cents_to_money(row.amount_cents),
+        amount_cents=row.amount_cents,
+        due_date=row.due_date,
+        category=row.category,
+        recurrence=row.recurrence,
+        notes=row.notes,
+        state=row.state,
+        days_until=row.days_until,
+        paid_at=paid_at,
+    )
+
+
+@router.get("/bills", response_model=list[BillOut])
+def list_bills(todos: int = 0, db: Session = Depends(get_db)):
+    bills = {b.id: b for b in db.scalars(select(Bill)).all()}
+    return [
+        _bill_out(r, paid_at=bills[r.id].paid_at)
+        for r in analytics.bill_rows(db, solo_pendientes=not todos)
+    ]
+
+
+@router.post("/bills", response_model=BillOut, status_code=201)
+def create_bill(payload: BillCreate, db: Session = Depends(get_db)):
+    descripcion = payload.description.strip()
+    if not descripcion:
+        raise HTTPException(400, "La descripción del vencimiento no puede estar vacía.")
+    cat = _find_category(db, payload.category, "expense")
+    if payload.recurrence not in ("once", "monthly"):
+        raise HTTPException(400, "La recurrencia debe ser 'once' o 'monthly'.")
+    bill = Bill(
+        description=descripcion,
+        amount_cents=money_to_cents(payload.amount),
+        due_date=payload.due_date,
+        category_id=cat.id,
+        recurrence=payload.recurrence,
+        notes=payload.notes.strip(),
+    )
+    db.add(bill)
+    db.commit()
+    db.refresh(bill)
+    row = next(r for r in analytics.bill_rows(db, solo_pendientes=False) if r.id == bill.id)
+    return _bill_out(row)
+
+
+@router.post("/bills/{bid}/pay", response_model=BillPayOut)
+def pay_bill(bid: int, db: Session = Depends(get_db)):
+    """Marca un vencimiento como pagado y genera el gasto correspondiente.
+
+    Si el vencimiento es mensual, además crea el siguiente (misma fecha del
+    mes que viene) para no tener que cargarlo a mano cada mes.
+    """
+    bill = db.get(Bill, bid)
+    if bill is None:
+        raise HTTPException(404, f"No existe el vencimiento #{bid}")
+    if bill.paid_at is not None:
+        raise HTTPException(409, f"El vencimiento «{bill.description}» ya está pagado.")
+
+    t = Transaction(
+        type="expense",
+        amount_cents=bill.amount_cents,
+        category_id=bill.category_id,
+        description=f"Pago: {bill.description}",
+        date=date.today(),
+    )
+    db.add(t)
+    bill.paid_at = date.today()
+
+    next_row = None
+    next_bill = None
+    if bill.recurrence == "monthly":
+        next_bill = Bill(
+            description=bill.description,
+            amount_cents=bill.amount_cents,
+            due_date=analytics.add_months(bill.due_date),
+            category_id=bill.category_id,
+            recurrence="monthly",
+            notes=bill.notes,
+        )
+        db.add(next_bill)
+    db.commit()
+    db.refresh(t)
+    db.refresh(bill)
+    if next_bill is not None:
+        db.refresh(next_bill)
+        next_row = next(
+            r for r in analytics.bill_rows(db, solo_pendientes=False) if r.id == next_bill.id
+        )
+
+    row = next(r for r in analytics.bill_rows(db, solo_pendientes=False) if r.id == bill.id)
+    return BillPayOut(
+        bill=_bill_out(row, paid_at=bill.paid_at),
+        transaction_id=t.id,
+        next_bill=_bill_out(next_row, paid_at=None) if next_row else None,
+    )
+
+
+@router.delete("/bills/{bid}", status_code=204)
+def delete_bill(bid: int, db: Session = Depends(get_db)):
+    bill = db.get(Bill, bid)
+    if bill is None:
+        raise HTTPException(404, f"No existe el vencimiento #{bid}")
+    db.delete(bill)
+    db.commit()
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Centro de alertas
+# ---------------------------------------------------------------------------
+
+@router.get("/alerts", response_model=list[AlertOut])
+def list_alerts(db: Session = Depends(get_db)):
+    return [AlertOut(severity=a.severity, kind=a.kind, message=a.message)
+            for a in analytics.all_alerts(db)]
 
 
 # ---------------------------------------------------------------------------
