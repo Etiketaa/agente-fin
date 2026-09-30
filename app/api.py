@@ -4,17 +4,17 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import analytics
+from . import analytics, auth as auth_helpers
 from .agent.agent import run_agent
 from .agent.provider import ProviderError, get_provider
 from .agent.tools import cents_to_money, money_to_cents
 from .config import get_settings
 from .db import get_db
-from .models import Bill, Budget, Category, SavingsGoal, Transaction
+from .models import Bill, Budget, Category, SavingsGoal, Transaction, User, UserSession
 from .schemas import (
     AgentChatRequest,
     AgentConfirmRequest,
@@ -29,9 +29,13 @@ from .schemas import (
     CategoryTotal,
     GoalCreate,
     GoalOut,
+    LoginRequest,
+    RegisterRequest,
     SummaryOut,
+    TokenOut,
     TransactionCreate,
     TransactionOut,
+    UserOut,
 )
 
 router = APIRouter(prefix="/api")
@@ -126,6 +130,92 @@ def get_config():
         "sensitive_amount": s.sensitive_amount,
         "budget_alert_pct": s.budget_alert_pct,
     }
+
+
+# ---------------------------------------------------------------------------
+# Autenticación
+# ---------------------------------------------------------------------------
+
+def _issue_token(db: Session, user: User) -> TokenOut:
+    token = auth_helpers.new_token()
+    db.add(UserSession(user_id=user.id, token_hash=auth_helpers.hash_token(token)))
+    db.commit()
+    return TokenOut(token=token, username=user.username)
+
+
+@router.post("/auth/register", response_model=TokenOut, status_code=201)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    """Crea un usuario y devuelve un token de sesión.
+
+    Todavía no scopea datos (eso llega con el user_id): en este punto solo
+    verifica que el flujo de alta y login funcione de punta a punta.
+    """
+    try:
+        username = auth_helpers.valid_username(payload.username)
+        auth_helpers.valid_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if db.scalar(select(User).where(User.username == username)):
+        raise HTTPException(409, f"El usuario '{username}' ya existe.")
+    user = User(username=username, password_hash=auth_helpers.hash_password(payload.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _issue_token(db, user)
+
+
+@router.post("/auth/login", response_model=TokenOut)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    try:
+        username = auth_helpers.valid_username(payload.username)
+    except ValueError:
+        raise HTTPException(401, "Usuario o contraseña incorrectos.")
+    user = db.scalar(select(User).where(User.username == username))
+    if user is None or not auth_helpers.verify_password(payload.password, user.password_hash):
+        # Mismo mensaje en ambos casos: no filtramos si el usuario existe.
+        raise HTTPException(401, "Usuario o contraseña incorrectos.")
+    return _issue_token(db, user)
+
+
+@router.post("/auth/logout", status_code=204)
+def logout(request: Request, db: Session = Depends(get_db)):
+    session = _session_from_request(request, db)
+    if session is not None:
+        db.delete(session)
+        db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/auth/me", response_model=UserOut)
+def me(request: Request, db: Session = Depends(get_db)):
+    user = _user_from_request(request, db)
+    if user is None:
+        raise HTTPException(401, "Sesión inválida o ausente. Iniciá sesión de nuevo.")
+    return UserOut(id=user.id, username=user.username)
+
+
+def _token_from_header(request: Request) -> str | None:
+    value = request.headers.get("Authorization", "")
+    scheme, _, token = value.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    return token.strip()
+
+
+def _session_from_request(request: Request, db: Session) -> UserSession | None:
+    token = _token_from_header(request)
+    if not token:
+        return None
+    return db.scalar(
+        select(UserSession).where(UserSession.token_hash == auth_helpers.hash_token(token))
+    )
+
+
+def _user_from_request(request: Request, db: Session) -> User | None:
+    session = _session_from_request(request, db)
+    if session is None:
+        return None
+    return db.get(User, session.user_id)
 
 
 # ---------------------------------------------------------------------------
