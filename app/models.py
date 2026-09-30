@@ -9,6 +9,35 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
 
+class User(Base):
+    """Usuario de la app. Cada usuario ve solo sus propios datos.
+
+    El hash de contraseña usa PBKDF2-SHA256 de la stdlib (sin dependencias
+    nuevas). Los tokens de sesión se guardan hasheados: si alguien lee la
+    base, no obtiene sesiones válidas.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class UserSession(Base):
+    """Sesión iniciada: un token opaco por login (revocable con logout)."""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped[User] = relationship()
+
+
 class Category(Base):
     __tablename__ = "categories"
 
