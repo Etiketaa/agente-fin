@@ -31,8 +31,8 @@ def _row_line(row: analytics.GoalRow) -> str:
     return "  - " + " | ".join(parts)
 
 
-def listar_objetivos(db: Session, args: dict) -> str:
-    rows = analytics.goal_rows(db)
+def listar_objetivos(db: Session, args: dict, user_id: int) -> str:
+    rows = analytics.goal_rows(db, user_id)
     if not rows:
         return (
             "No hay objetivos de ahorro cargados. Si querés crear uno, pedime "
@@ -48,11 +48,15 @@ def listar_objetivos(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def crear_objetivo(db: Session, args: dict) -> str:
+def crear_objetivo(db: Session, args: dict, user_id: int) -> str:
     nombre = str(args.get("nombre", "")).strip()
     if not nombre:
         raise ValueError("Falta el nombre del objetivo.")
-    if db.scalar(select(SavingsGoal).where(SavingsGoal.name.ilike(nombre))):
+    if db.scalar(
+        select(SavingsGoal).where(
+            SavingsGoal.user_id == user_id, SavingsGoal.name.ilike(nombre)
+        )
+    ):
         raise ValueError(f"Ya existe un objetivo llamado '{nombre}'.")
 
     monto = float(args.get("monto", 0))
@@ -64,6 +68,7 @@ def crear_objetivo(db: Session, args: dict) -> str:
         raise ValueError(f"La fecha límite {fecha.isoformat()} ya pasó.")
 
     goal = SavingsGoal(
+        user_id=user_id,
         name=nombre,
         target_cents=money_to_cents(monto),
         target_date=fecha,
@@ -76,12 +81,12 @@ def crear_objetivo(db: Session, args: dict) -> str:
     return f"Objetivo #{goal.id} «{goal.name}» creado: meta {fmt(goal.target_cents)}{cierre}."
 
 
-def eliminar_objetivo(db: Session, args: dict) -> str:
+def eliminar_objetivo(db: Session, args: dict, user_id: int) -> str:
     gid = int(args.get("id", 0))
     goal = db.get(SavingsGoal, gid)
-    if goal is None:
+    if goal is None or goal.user_id != user_id:
         raise ValueError(f"No existe el objetivo #{gid}.")
-    saved, count = analytics.goal_contributions(db, gid)
+    saved, count = analytics.goal_contributions(db, user_id, gid)
     if count:
         raise ValueError(
             f"El objetivo «{goal.name}» tiene {count} movimiento(s) asignado(s) por "

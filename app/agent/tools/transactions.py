@@ -17,26 +17,42 @@ from .base import (
 )
 
 
-def listar_categorias(db: Session, args: dict) -> str:
-    return category_catalogue(db)
+def listar_categorias(db: Session, args: dict, user_id: int) -> str:
+    return category_catalogue(db, user_id)
 
 
-def registrar_transaccion(db: Session, args: dict) -> str:
+def _owned_tx(db: Session, user_id: int, tid: int) -> Transaction:
+    t = db.get(Transaction, tid)
+    if t is None or t.user_id != user_id:
+        raise ValueError(f"No existe la transacción #{tid}.")
+    return t
+
+
+def registrar_transaccion(db: Session, args: dict, user_id: int) -> str:
     tipo = str(args.get("tipo", "")).lower()
     if tipo not in ("income", "expense"):
         raise ValueError("El campo 'tipo' debe ser 'income' (ingreso) o 'expense' (gasto).")
     monto = float(args.get("monto", 0))
     if monto <= 0:
         raise ValueError("El monto debe ser mayor a cero.")
-    cat = find_category(db, str(args.get("categoria", "")), tipo)
+    cat = find_category(db, user_id, str(args.get("categoria", "")), tipo)
 
     goal = None
     objetivo = str(args.get("objetivo", "")).strip()
     if objetivo:
-        goal = db.scalar(select(SavingsGoal).where(SavingsGoal.name.ilike(objetivo)))
+        goal = db.scalar(
+            select(SavingsGoal).where(
+                SavingsGoal.user_id == user_id, SavingsGoal.name.ilike(objetivo)
+            )
+        )
         if goal is None:
             nombres = ", ".join(
-                g.name for g in db.scalars(select(SavingsGoal).order_by(SavingsGoal.name)).all()
+                g.name
+                for g in db.scalars(
+                    select(SavingsGoal)
+                    .where(SavingsGoal.user_id == user_id)
+                    .order_by(SavingsGoal.name)
+                ).all()
             )
             raise ValueError(
                 f"No existe el objetivo '{objetivo}'. "
@@ -44,6 +60,7 @@ def registrar_transaccion(db: Session, args: dict) -> str:
             )
 
     t = Transaction(
+        user_id=user_id,
         type=tipo,
         amount_cents=money_to_cents(monto),
         category_id=cat.id,
@@ -62,8 +79,12 @@ def registrar_transaccion(db: Session, args: dict) -> str:
     )
 
 
-def listar_transacciones(db: Session, args: dict) -> str:
-    q = select(Transaction).join(Category)
+def listar_transacciones(db: Session, args: dict, user_id: int) -> str:
+    q = (
+        select(Transaction)
+        .join(Category)
+        .where(Transaction.user_id == user_id, Category.user_id == user_id)
+    )
     tipo = args.get("tipo")
     if tipo:
         q = q.where(Transaction.type == str(tipo).lower())
@@ -72,7 +93,11 @@ def listar_transacciones(db: Session, args: dict) -> str:
         q = q.where(Category.name.ilike(str(categoria).strip()))
     objetivo = str(args.get("objetivo", "")).strip()
     if objetivo:
-        goal = db.scalar(select(SavingsGoal).where(SavingsGoal.name.ilike(objetivo)))
+        goal = db.scalar(
+            select(SavingsGoal).where(
+                SavingsGoal.user_id == user_id, SavingsGoal.name.ilike(objetivo)
+            )
+        )
         if goal is None:
             raise ValueError(f"No existe el objetivo '{objetivo}'.")
         q = q.where(Transaction.goal_id == goal.id)
@@ -97,8 +122,12 @@ def listar_transacciones(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def resumen_por_categoria(db: Session, args: dict) -> str:
-    q = select(Transaction).join(Category)
+def resumen_por_categoria(db: Session, args: dict, user_id: int) -> str:
+    q = (
+        select(Transaction)
+        .join(Category)
+        .where(Transaction.user_id == user_id, Category.user_id == user_id)
+    )
     desde = parse_date(args.get("desde"))
     if desde:
         q = q.where(Transaction.date >= desde)
@@ -118,8 +147,8 @@ def resumen_por_categoria(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def calcular_balance(db: Session, args: dict) -> str:
-    q = select(Transaction)
+def calcular_balance(db: Session, args: dict, user_id: int) -> str:
+    q = select(Transaction).where(Transaction.user_id == user_id)
     desde = parse_date(args.get("desde"))
     if desde:
         q = q.where(Transaction.date >= desde)
@@ -141,11 +170,9 @@ def calcular_balance(db: Session, args: dict) -> str:
     )
 
 
-def eliminar_transaccion(db: Session, args: dict) -> str:
+def eliminar_transaccion(db: Session, args: dict, user_id: int) -> str:
     tid = int(args.get("id", 0))
-    t = db.get(Transaction, tid)
-    if t is None:
-        raise ValueError(f"No existe la transacción #{tid}.")
+    t = _owned_tx(db, user_id, tid)
     db.delete(t)
     db.commit()
     return f"Transacción #{tid} eliminada."

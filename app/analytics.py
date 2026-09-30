@@ -89,19 +89,19 @@ class GoalRow:
     contributions: int  # cuántos movimientos están asignados
 
 
-def _goal_aggregate(db: Session, goal_id: int) -> tuple[int, int]:
+def _goal_aggregate(db: Session, user_id: int, goal_id: int) -> tuple[int, int]:
     """(suma en centavos, cantidad de movimientos) de un objetivo."""
     total, count = db.execute(
         select(
             func.coalesce(func.sum(Transaction.amount_cents), 0),
             func.count(Transaction.id),
-        ).where(Transaction.goal_id == goal_id)
+        ).where(Transaction.user_id == user_id, Transaction.goal_id == goal_id)
     ).one()
     return int(total or 0), int(count or 0)
 
 
-def goal_contributions(db: Session, goal_id: int) -> tuple[int, int]:
-    return _goal_aggregate(db, goal_id)
+def goal_contributions(db: Session, user_id: int, goal_id: int) -> tuple[int, int]:
+    return _goal_aggregate(db, user_id, goal_id)
 
 
 def _months_until(target: date, today: date) -> float:
@@ -111,8 +111,8 @@ def _months_until(target: date, today: date) -> float:
     ) / 30.0
 
 
-def _goal_row(db: Session, goal: SavingsGoal, today: date) -> GoalRow:
-    saved, count = _goal_aggregate(db, goal.id)
+def _goal_row(db: Session, user_id: int, goal: SavingsGoal, today: date) -> GoalRow:
+    saved, count = _goal_aggregate(db, user_id, goal.id)
     remaining = max(goal.target_cents - saved, 0)
     percent = (saved / goal.target_cents * 100) if goal.target_cents else 0.0
 
@@ -143,10 +143,14 @@ def _goal_row(db: Session, goal: SavingsGoal, today: date) -> GoalRow:
     )
 
 
-def goal_rows(db: Session) -> list[GoalRow]:
+def goal_rows(db: Session, user_id: int) -> list[GoalRow]:
     today = date.today()
-    goals = db.scalars(select(SavingsGoal).order_by(SavingsGoal.id)).all()
-    return [_goal_row(db, g, today) for g in goals]
+    goals = db.scalars(
+        select(SavingsGoal)
+        .where(SavingsGoal.user_id == user_id)
+        .order_by(SavingsGoal.id)
+    ).all()
+    return [_goal_row(db, user_id, g, today) for g in goals]
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +197,11 @@ def budget_status(spent_cents: int, limit_cents: int) -> str:
     return OK
 
 
-def _category_spend(db: Session, category_id: int, start: date, end: date) -> int:
+def _category_spend(db: Session, user_id: int, category_id: int, start: date, end: date) -> int:
     return int(
         db.scalar(
             select(func.coalesce(func.sum(Transaction.amount_cents), 0)).where(
+                Transaction.user_id == user_id,
                 Transaction.category_id == category_id,
                 Transaction.type == "expense",
                 Transaction.date >= start,
@@ -207,7 +212,7 @@ def _category_spend(db: Session, category_id: int, start: date, end: date) -> in
     )
 
 
-def budget_rows(db: Session, month: str | None = None) -> list[BudgetRow]:
+def budget_rows(db: Session, month: str | None = None, user_id: int = 0) -> list[BudgetRow]:
     """Presupuestos con su estado para el mes pedido (por defecto, el actual).
 
     La proyección solo tiene sentido en el mes en curso: para meses ya
@@ -225,8 +230,13 @@ def budget_rows(db: Session, month: str | None = None) -> list[BudgetRow]:
     prev_start, prev_end = _prev_month_bounds(start)
 
     rows: list[BudgetRow] = []
-    for budget in db.scalars(select(Budget).join(Category).order_by(Category.name)).all():
-        spent = _category_spend(db, budget.category_id, start, end)
+    for budget in db.scalars(
+        select(Budget)
+        .join(Category)
+        .where(Budget.user_id == user_id, Category.user_id == user_id)
+        .order_by(Category.name)
+    ).all():
+        spent = _category_spend(db, user_id, budget.category_id, start, end)
         if in_current_month and days_elapsed:
             projected = round(spent * days_total / days_elapsed)
         else:
@@ -239,7 +249,7 @@ def budget_rows(db: Session, month: str | None = None) -> list[BudgetRow]:
         has_prev_month = budget_created < start
 
         if has_prev_month:
-            prev_spent = _category_spend(db, budget.category_id, prev_start, prev_end)
+            prev_spent = _category_spend(db, user_id, budget.category_id, prev_start, prev_end)
             prev_limit = budget.amount_cents + budget.rollover_cents
             rollover = prev_limit - prev_spent  # positivo = sobró, negativo = faltó
         else:
@@ -291,7 +301,8 @@ def budget_alerts(rows: list[BudgetRow]) -> list[BudgetRow]:
 # Detección de anomalías (gastos que se disparan vs histórico)
 # ---------------------------------------------------------------------------
 
-def detect_anomalies(db: Session, month: str | None = None, threshold_pct: float = 150.0) -> list[AnomalyRow]:
+def detect_anomalies(db: Session, month: str | None = None, threshold_pct: float = 150.0,
+                     user_id: int = 0) -> list[AnomalyRow]:
     """Detecta gastos del mes que superan `threshold_pct`% de la media histórica.
 
     Compara cada gasto individual del mes contra el promedio de gastos
@@ -303,7 +314,12 @@ def detect_anomalies(db: Session, month: str | None = None, threshold_pct: float
     start, end = month_bounds(month)
 
     # Obtener todas las categorías de gasto con presupuesto (son las que importan)
-    budgets = db.scalars(select(Budget).join(Category).order_by(Category.name)).all()
+    budgets = db.scalars(
+        select(Budget)
+        .join(Category)
+        .where(Budget.user_id == user_id, Category.user_id == user_id)
+        .order_by(Category.name)
+    ).all()
     if not budgets:
         return []
 
@@ -317,7 +333,7 @@ def detect_anomalies(db: Session, month: str | None = None, threshold_pct: float
             m_start, m_end = _prev_month_bounds(start)
             for _ in range(i - 1):
                 m_start, m_end = _prev_month_bounds(m_start)
-            spent = _category_spend(db, cat_id, m_start, m_end)
+            spent = _category_spend(db, user_id, cat_id, m_start, m_end)
             if spent > 0:
                 cat_avg.setdefault(cat_id, []).append(spent)
         if cat_id in cat_avg and len(cat_avg[cat_id]) >= 3:
@@ -334,6 +350,7 @@ def detect_anomalies(db: Session, month: str | None = None, threshold_pct: float
     from sqlalchemy import select as sql_select
     txs = db.scalars(
         sql_select(Transaction).where(
+            Transaction.user_id == user_id,
             Transaction.type == "expense",
             Transaction.date >= start,
             Transaction.date <= end,
@@ -405,14 +422,18 @@ def _bill_row(bill: Bill, today: date) -> BillRow:
     )
 
 
-def bill_rows(db: Session, solo_pendientes: bool = True) -> list[BillRow]:
+def bill_rows(db: Session, user_id: int, solo_pendientes: bool = True) -> list[BillRow]:
     """Vencimientos con su estado derivado, ordenados por fecha.
 
     Por defecto solo los no pagados (lo que importa en el día a día); con
     `solo_pendientes=False` incluye el historial de pagados.
     """
     today = date.today()
-    q = select(Bill).join(Category)
+    q = (
+        select(Bill)
+        .join(Category)
+        .where(Bill.user_id == user_id, Category.user_id == user_id)
+    )
     if solo_pendientes:
         q = q.where(Bill.paid_at.is_(None))
     bills = db.scalars(q.order_by(Bill.due_date, Bill.id)).all()
@@ -438,7 +459,7 @@ class AlertRow:
     message: str
 
 
-def all_alerts(db: Session) -> list[AlertRow]:
+def all_alerts(db: Session, user_id: int) -> list[AlertRow]:
     """Consolida todo lo que requiere atención, lo más urgente primero.
 
     La comparten el banner del panel (`GET /api/alerts`) y el agente
@@ -453,7 +474,7 @@ def all_alerts(db: Session) -> list[AlertRow]:
     today = date.today()
 
     # 1. Vencimientos: vencidos (alta) y próximos (media).
-    for b in bill_rows(db):
+    for b in bill_rows(db, user_id):
         if b.state == BILL_VENCIDO:
             alerts.append(AlertRow(
                 ALTA, "vencimiento",
@@ -468,7 +489,7 @@ def all_alerts(db: Session) -> list[AlertRow]:
             ))
 
     # 2. Presupuestos del mes en curso.
-    for r in budget_alerts(budget_rows(db)):
+    for r in budget_alerts(budget_rows(db, None, user_id)):
         if r.status == EXCEDIDO:
             alerts.append(AlertRow(
                 ALTA, "presupuesto",
@@ -483,7 +504,7 @@ def all_alerts(db: Session) -> list[AlertRow]:
             ))
 
     # 3. Objetivos: vencidos (alta) y con fecha dentro de 30 días sin alcanzar (media).
-    for g in goal_rows(db):
+    for g in goal_rows(db, user_id):
         if g.status == VENCIDO:
             alerts.append(AlertRow(
                 ALTA, "objetivo",
@@ -499,7 +520,7 @@ def all_alerts(db: Session) -> list[AlertRow]:
             ))
 
     # 4. Anomalías del mes (media, resumidas en una línea).
-    anomalies = detect_anomalies(db)
+    anomalies = detect_anomalies(db, None, 150.0, user_id)
     if anomalies:
         top = anomalies[0]
         alerts.append(AlertRow(

@@ -13,28 +13,35 @@ from datetime import date, timedelta
 from sqlalchemy import select
 
 from app.config import get_settings, BASE_DIR  # noqa: F401  (asegura .env cargado)
+from app.auth import hash_password
 from app.db import Base, SessionLocal, engine
 from app.agent.tools import money_to_cents
-from app.models import Budget, Category, SavingsGoal, Transaction
+from app.models import Budget, Category, SavingsGoal, Transaction, User
+from app.seed import seed_user_categories
 
-DEFAULT_CATEGORIES = [
-    ("Sueldo", "income"), ("Freelance", "income"), ("Otros ingresos", "income"),
-    ("Comida", "expense"), ("Transporte", "expense"), ("Vivienda", "expense"),
-    ("Servicios", "expense"), ("Salud", "expense"), ("Educación", "expense"),
-    ("Ocio", "expense"), ("Motos", "expense"), ("Compras", "expense"), ("Otros", "expense"),
-]
+DEMO_USERNAME = "demo"
+DEMO_PASSWORD = "demo1234"
 
 
 def main() -> None:
     Base.metadata.create_all(engine)
     db = SessionLocal()
     try:
-        existing = {name for (name,) in db.execute(select(Category.name)).all()}
-        for name, kind in DEFAULT_CATEGORIES:
-            if name not in existing:
-                db.add(Category(name=name, kind=kind))
-        db.commit()
-        cats = {c.name: c for c in db.scalars(select(Category)).all()}
+        user = db.scalar(select(User).where(User.username == DEMO_USERNAME))
+        if user is None:
+            user = User(username=DEMO_USERNAME,
+                        password_hash=hash_password(DEMO_PASSWORD))
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            print(f"Usuario demo creado: {DEMO_USERNAME} / {DEMO_PASSWORD}")
+        seed_user_categories(db, user)
+        cats = {
+            c.name: c
+            for c in db.scalars(
+                select(Category).where(Category.user_id == user.id)
+            ).all()
+        }
         today = date.today()
         first = today.replace(day=1)
         samples = [
@@ -54,6 +61,7 @@ def main() -> None:
         # goal_id, así que los aportes van como transactions más abajo.
         goals = {
             nombre: SavingsGoal(
+                user_id=user.id,
                 name=nombre,
                 target_cents=money_to_cents(monto),
                 target_date=fecha,
@@ -71,14 +79,15 @@ def main() -> None:
 
         db.add_all(
             [
-                Transaction(type=t, amount_cents=money_to_cents(m), category_id=cats[c].id,
-                            description=d, date=f)
+                Transaction(user_id=user.id, type=t, amount_cents=money_to_cents(m),
+                            category_id=cats[c].id, description=d, date=f)
                 for t, m, c, d, f in samples
             ]
             # Aportes al fondo de emergencia: además de contar en el balance,
             # suman al progreso del objetivo.
             + [
-                Transaction(type="expense", amount_cents=money_to_cents(monto),
+                Transaction(user_id=user.id, type="expense",
+                            amount_cents=money_to_cents(monto),
                             category_id=cats["Otros"].id, description=desc,
                             date=first + timedelta(days=dia), goal_id=goals["Fondo de emergencia"].id)
                 for monto, desc, dia in [
@@ -88,7 +97,7 @@ def main() -> None:
             ]
         )
         db.add_all(
-            Budget(category_id=cats[c].id, amount_cents=money_to_cents(m))
+            Budget(user_id=user.id, category_id=cats[c].id, amount_cents=money_to_cents(m))
             for c, m in [("Comida", 180000), ("Motos", 90000), ("Ocio", 60000)]
         )
         db.commit()

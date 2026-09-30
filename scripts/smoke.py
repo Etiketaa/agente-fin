@@ -16,14 +16,38 @@ import urllib.request
 
 BASE = "http://127.0.0.1:8000"
 
+# Token por defecto para los requests autenticados. Los checks de aislamiento
+# lo pisan temporalmente con with_token().
+_TOKEN: str | None = None
 
-def req(method: str, path: str, payload: dict | None = None):
+
+def req(method: str, path: str, payload: dict | None = None, token: str | None = None):
     data = json.dumps(payload).encode() if payload is not None else None
-    r = urllib.request.Request(BASE + path, data=data, method=method,
-                               headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    bearer = token if token is not None else _TOKEN
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+    r = urllib.request.Request(BASE + path, data=data, method=method, headers=headers)
     with urllib.request.urlopen(r) as resp:
         body = resp.read()
         return json.loads(body) if body else None
+
+
+class with_token:
+    """Context manager para correr un bloque como otro usuario (o anónimo)."""
+
+    def __init__(self, token: str | None):
+        self.token = token
+        self.prev: str | None = None
+
+    def __enter__(self):
+        global _TOKEN
+        self.prev = _TOKEN
+        _TOKEN = self.token
+
+    def __exit__(self, *args):
+        global _TOKEN
+        _TOKEN = self.prev
 
 
 def wait_server(retries=30):
@@ -52,7 +76,7 @@ def agent_req(method: str, path: str, payload: dict, attempts: int = 3):
     """
     for n in range(attempts):
         try:
-            return req(method, path, payload)
+            return req(method, path, payload, token=_TOKEN)
         except urllib.error.HTTPError as e:
             retryable = e.code == 503
             if not retryable or n == attempts - 1:
@@ -127,6 +151,60 @@ def _run(c: Cleanup):
     cfg = req("GET", "/api/config")
     check(f"config expone currency={cfg['currency']}, provider={cfg['provider']}", True)
     check("config expone el umbral de alerta", 0 < cfg["budget_alert_pct"] <= 1)
+
+    print("\n[auth + aislamiento]")
+    # Sin token, todo dato devuelve 401 (el login/registro quedan abiertos).
+    expect_error("sin token no hay datos",
+                 lambda: req("GET", "/api/transactions", token=""), 401)
+
+    def get_token(username: str) -> str:
+        # Resiliente a corridas anteriores: si el usuario ya existe, login.
+        try:
+            r = req("POST", "/api/auth/register",
+                    {"username": username, "password": "password123"}, token="")
+        except urllib.error.HTTPError as e:
+            assert e.code == 409, f"registro inesperado: HTTP {e.code}"
+            r = req("POST", "/api/auth/login",
+                    {"username": username, "password": "password123"}, token="")
+        return r["token"]
+
+    tok_a, tok_b = get_token("smoke_a"), get_token("smoke_b")
+    check("registro/login devuelve token", bool(tok_a and tok_b))
+    expect_error("usuario duplicado", lambda: req(
+        "POST", "/api/auth/register",
+        {"username": "SMOKE_A", "password": "password123"}, token=""), 409)
+    expect_error("login con clave wrong", lambda: req(
+        "POST", "/api/auth/login",
+        {"username": "smoke_a", "password": "wrongpass1"}, token=""), 401)
+    expect_error("usuario corto", lambda: req(
+        "POST", "/api/auth/register",
+        {"username": "ab", "password": "password123"}, token=""), 400)
+    expect_error("clave corta", lambda: req(
+        "POST", "/api/auth/register",
+        {"username": "smoke_c", "password": "corta"}, token=""), 400)
+    me = req("GET", "/api/auth/me", token=tok_a)
+    check("me devuelve el usuario propio", me["username"] == "smoke_a")
+
+    # A partir de acá, todo corre como smoke_a por defecto.
+    global _TOKEN
+    _TOKEN = tok_a
+
+    # Aislamiento: lo que crea A no lo ve B, ni siquiera adivinando el ID.
+    ta = req("POST", "/api/transactions",
+             {"type": "expense", "amount": 1111, "category": "Motos"})
+    c.txs.append(ta["id"])
+    with with_token(tok_b):
+        lista_b = req("GET", "/api/transactions?limite=100")
+        check("B no ve las transacciones de A",
+              all(t["id"] != ta["id"] for t in lista_b))
+        expect_error("B no puede borrar la transacción de A (404, no 403: no filtra existencia)",
+                     lambda: req("DELETE", f"/api/transactions/{ta['id']}"), 404)
+        s_b = req("GET", "/api/summary")
+        check("el resumen de B no incluye lo de A", s_b["total_expense"] == 0)
+    # Las categorías también son por usuario (mismo nombre, dueños distintos).
+    with with_token(tok_b):
+        cats_b = req("GET", "/api/categories")
+        check("B tiene sus propias categorías", {"Motos", "Comida"} <= {x["name"] for x in cats_b})
 
     print("\n[categorías]")
     cats = req("GET", "/api/categories")

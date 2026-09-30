@@ -151,8 +151,10 @@ class AlertOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 class RegisterRequest(BaseModel):
-    username: str = Field(min_length=3, max_length=40)
-    password: str = Field(min_length=8, max_length=200)
+    # Sin min_length a propósito: la validación la hace el endpoint y devuelve
+    # 400 (contrato de esta API), no el 422 genérico de Pydantic.
+    username: str = Field(max_length=40)
+    password: str = Field(max_length=200)
 
 
 class LoginRequest(BaseModel):

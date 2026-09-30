@@ -1,9 +1,14 @@
-"""Modelos de datos (SQLAlchemy)."""
+"""Modelos de datos (SQLAlchemy).
+
+Regla multiusuario: TODA tabla de dominio tiene `user_id` (FK a users, con
+borrado en cascada). Ningún query puede filtrar sin `user_id`: los datos de
+un usuario nunca son visibles para otro, ni siquiera por ID adivinado.
+"""
 from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -40,9 +45,13 @@ class UserSession(Base):
 
 class Category(Base):
     __tablename__ = "categories"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(80), unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(80))
     kind: Mapped[str] = mapped_column(String(10))  # "income" | "expense"
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -50,9 +59,13 @@ class Category(Base):
 class Vehicle(Base):
     """Vehículo (moto, auto, etc.) para categorizar gastos específicos."""
     __tablename__ = "vehicles"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(80), unique=True)  # ej: "Moto Honda", "Auto usado"
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(80))  # ej: "Moto Honda", "Auto usado"
     kind: Mapped[str] = mapped_column(String(20))  # "moto" | "auto" | "otro"
     notes: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -62,6 +75,9 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     type: Mapped[str] = mapped_column(String(10), index=True)  # "income" | "expense"
     amount_cents: Mapped[int] = mapped_column(Integer)  # montos en centavos, nunca en float
     description: Mapped[str] = mapped_column(String(200), default="")
@@ -97,9 +113,13 @@ class SavingsGoal(Base):
     """
 
     __tablename__ = "savings_goals"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(80), unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(80))
     target_cents: Mapped[int] = mapped_column(Integer)
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str] = mapped_column(String(200), default="")
@@ -117,6 +137,9 @@ class Bill(Base):
     __tablename__ = "bills"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     description: Mapped[str] = mapped_column(String(200))
     amount_cents: Mapped[int] = mapped_column(Integer)  # centavos, nunca float
     due_date: Mapped[date] = mapped_column(Date, index=True)
@@ -140,9 +163,13 @@ class Budget(Base):
     """
 
     __tablename__ = "budgets"
+    __table_args__ = (UniqueConstraint("user_id", "category_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
     amount_cents: Mapped[int] = mapped_column(Integer)
     rollover_cents: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

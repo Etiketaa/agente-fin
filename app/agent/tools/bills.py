@@ -41,9 +41,9 @@ def _row_line(row: analytics.BillRow) -> str:
     )
 
 
-def listar_vencimientos(db: Session, args: dict) -> str:
+def listar_vencimientos(db: Session, args: dict, user_id: int) -> str:
     todos = bool(args.get("todos", False))
-    rows = analytics.bill_rows(db, solo_pendientes=not todos)
+    rows = analytics.bill_rows(db, user_id, solo_pendientes=not todos)
     if not rows:
         return (
             "No hay vencimientos pendientes. Si querés cargar uno, pedime "
@@ -54,7 +54,7 @@ def listar_vencimientos(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def crear_vencimiento(db: Session, args: dict) -> str:
+def crear_vencimiento(db: Session, args: dict, user_id: int) -> str:
     descripcion = str(args.get("descripcion", "")).strip()
     if not descripcion:
         raise ValueError("Falta la descripción del vencimiento.")
@@ -64,12 +64,13 @@ def crear_vencimiento(db: Session, args: dict) -> str:
     fecha = parse_date(args.get("fecha"))
     if fecha is None:
         raise ValueError("Falta la fecha de vencimiento (formato YYYY-MM-DD).")
-    cat = find_category(db, str(args.get("categoria", "")), "expense")
+    cat = find_category(db, user_id, str(args.get("categoria", "")), "expense")
     rec = str(args.get("recurrencia", "once")).strip().lower() or "once"
     if rec not in ("once", "monthly"):
         raise ValueError("La recurrencia debe ser 'once' (una vez) o 'monthly' (mensual).")
 
     bill = Bill(
+        user_id=user_id,
         description=descripcion,
         amount_cents=money_to_cents(monto),
         due_date=fecha,
@@ -87,15 +88,16 @@ def crear_vencimiento(db: Session, args: dict) -> str:
     )
 
 
-def pagar_vencimiento(db: Session, args: dict) -> str:
+def pagar_vencimiento(db: Session, args: dict, user_id: int) -> str:
     bid = int(args.get("id", 0))
     bill = db.get(Bill, bid)
-    if bill is None:
+    if bill is None or bill.user_id != user_id:
         raise ValueError(f"No existe el vencimiento #{bid}.")
     if bill.paid_at is not None:
         raise ValueError(f"El vencimiento «{bill.description}» ya está pagado.")
 
     t = Transaction(
+        user_id=user_id,
         type="expense",
         amount_cents=bill.amount_cents,
         category_id=bill.category_id,
@@ -108,6 +110,7 @@ def pagar_vencimiento(db: Session, args: dict) -> str:
     extra = ""
     if bill.recurrence == "monthly":
         siguiente = Bill(
+            user_id=user_id,
             description=bill.description,
             amount_cents=bill.amount_cents,
             due_date=analytics.add_months(bill.due_date),
@@ -125,10 +128,10 @@ def pagar_vencimiento(db: Session, args: dict) -> str:
     )
 
 
-def eliminar_vencimiento(db: Session, args: dict) -> str:
+def eliminar_vencimiento(db: Session, args: dict, user_id: int) -> str:
     bid = int(args.get("id", 0))
     bill = db.get(Bill, bid)
-    if bill is None:
+    if bill is None or bill.user_id != user_id:
         raise ValueError(f"No existe el vencimiento #{bid}.")
     nombre = bill.description
     db.delete(bill)
@@ -136,8 +139,8 @@ def eliminar_vencimiento(db: Session, args: dict) -> str:
     return f"Vencimiento #{bid} «{nombre}» eliminado."
 
 
-def listar_alertas(db: Session, args: dict) -> str:
-    alerts = analytics.all_alerts(db)
+def listar_alertas(db: Session, args: dict, user_id: int) -> str:
+    alerts = analytics.all_alerts(db, user_id)
     if not alerts:
         return "✅ Sin alertas: nada vencido, presupuestos en orden y metas al día."
     lines = [f"Alertas ({len(alerts)}), las más urgentes primero:"]

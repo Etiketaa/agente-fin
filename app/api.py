@@ -50,13 +50,43 @@ def _parse_iso(value: Optional[str]) -> Optional[date]:
         raise HTTPException(400, f"Fecha inválida: '{value}'. Usá YYYY-MM-DD.")
 
 
-def _find_category(db: Session, name: str, kind: str | None = None) -> Category:
-    cat = db.scalar(select(Category).where(func.lower(Category.name) == name.strip().lower()))
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """El usuario dueño del token Bearer. Todo endpoint de datos lo exige.
+
+    Devuelve 401 sin distinguir "sin token" de "token inválido": no filtramos
+    información sobre sesiones. Además completa las categorías si el usuario
+    todavía no tiene (repara altas creadas antes del seed por usuario).
+    """
+    user = _user_from_request(request, db)
+    if user is None:
+        raise HTTPException(401, "Sesión inválida o ausente. Iniciá sesión de nuevo.")
+    from .seed import seed_user_categories
+
+    seed_user_categories(db, user)
+    return user
+
+
+def _find_category(db: Session, user_id: int, name: str, kind: str | None = None) -> Category:
+    cat = db.scalar(
+        select(Category).where(
+            Category.user_id == user_id,
+            func.lower(Category.name) == name.strip().lower(),
+        )
+    )
     if cat is None:
         raise HTTPException(404, f"Categoría no encontrada: {name}")
     if kind and cat.kind != kind:
         raise HTTPException(400, f"La categoría '{cat.name}' es de {cat.kind}, no de {kind}")
     return cat
+
+
+def _owned(db: Session, model, oid: int, user_id: int, label: str):
+    """db.get + chequeo de dueño. Si no es tuyo, 404 (no 403): no filtramos
+    ni siquiera la existencia de registros ajenos."""
+    row = db.get(model, oid)
+    if row is None or row.user_id != user_id:
+        raise HTTPException(404, f"No existe {label} #{oid}")
+    return row
 
 
 def _to_out(t: Transaction) -> TransactionOut:
@@ -161,6 +191,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    from .seed import seed_user_categories
+
+    seed_user_categories(db, user)
     return _issue_token(db, user)
 
 
@@ -223,8 +256,12 @@ def _user_from_request(request: Request, db: Session) -> User | None:
 # ---------------------------------------------------------------------------
 
 @router.get("/categories", response_model=list[CategoryOut])
-def list_categories(db: Session = Depends(get_db)):
-    return db.scalars(select(Category).order_by(Category.kind, Category.name)).all()
+def list_categories(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.scalars(
+        select(Category)
+        .where(Category.user_id == user.id)
+        .order_by(Category.kind, Category.name)
+    ).all()
 
 
 # ---------------------------------------------------------------------------
@@ -232,20 +269,26 @@ def list_categories(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.get("/goals", response_model=list[GoalOut])
-def list_goals(db: Session = Depends(get_db)):
-    return [_goal_out(r) for r in analytics.goal_rows(db)]
+def list_goals(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return [_goal_out(r) for r in analytics.goal_rows(db, user.id)]
 
 
 @router.post("/goals", response_model=GoalOut, status_code=201)
-def create_goal(payload: GoalCreate, db: Session = Depends(get_db)):
+def create_goal(payload: GoalCreate, user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
     nombre = payload.name.strip()
     if not nombre:
         raise HTTPException(400, "El nombre del objetivo no puede estar vacío.")
-    if db.scalar(select(SavingsGoal).where(SavingsGoal.name.ilike(nombre))):
+    if db.scalar(
+        select(SavingsGoal).where(
+            SavingsGoal.user_id == user.id, SavingsGoal.name.ilike(nombre)
+        )
+    ):
         raise HTTPException(409, f"Ya existe un objetivo llamado '{nombre}'.")
     if payload.target_date and payload.target_date < date.today():
         raise HTTPException(400, f"La fecha límite {payload.target_date} ya pasó.")
     goal = SavingsGoal(
+        user_id=user.id,
         name=nombre,
         target_cents=money_to_cents(payload.target_amount),
         target_date=payload.target_date,
@@ -254,16 +297,14 @@ def create_goal(payload: GoalCreate, db: Session = Depends(get_db)):
     db.add(goal)
     db.commit()
     db.refresh(goal)
-    row = next(r for r in analytics.goal_rows(db) if r.id == goal.id)
+    row = next(r for r in analytics.goal_rows(db, user.id) if r.id == goal.id)
     return _goal_out(row)
 
 
 @router.delete("/goals/{gid}", status_code=204)
-def delete_goal(gid: int, db: Session = Depends(get_db)):
-    goal = db.get(SavingsGoal, gid)
-    if goal is None:
-        raise HTTPException(404, f"No existe el objetivo #{gid}")
-    _, count = analytics.goal_contributions(db, gid)
+def delete_goal(gid: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    goal = _owned(db, SavingsGoal, gid, user.id, "el objetivo")
+    _, count = analytics.goal_contributions(db, user.id, gid)
     if count:
         # Desvincular en silencio dejaría movimientos apuntando a un objetivo
         # inexistente: preferimos rechazar que perder trazabilidad del dinero.
@@ -282,36 +323,38 @@ def delete_goal(gid: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.get("/budgets", response_model=list[BudgetOut])
-def list_budgets(mes: Optional[str] = None, db: Session = Depends(get_db)):
+def list_budgets(mes: Optional[str] = None, user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
     try:
-        rows = analytics.budget_rows(db, mes)
+        rows = analytics.budget_rows(db, mes, user.id)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return [_budget_out(r) for r in rows]
 
 
 @router.post("/budgets", response_model=BudgetOut, status_code=201)
-def upsert_budget(payload: BudgetCreate, db: Session = Depends(get_db)):
-    cat = _find_category(db, payload.category, "expense")
+def upsert_budget(payload: BudgetCreate, user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    cat = _find_category(db, user.id, payload.category, "expense")
     cents = money_to_cents(payload.amount)
-    budget = db.scalar(select(Budget).where(Budget.category_id == cat.id))
+    budget = db.scalar(
+        select(Budget).where(Budget.user_id == user.id, Budget.category_id == cat.id)
+    )
     if budget is None:
-        budget = Budget(category_id=cat.id, amount_cents=cents)
+        budget = Budget(user_id=user.id, category_id=cat.id, amount_cents=cents)
         db.add(budget)
         db.commit()
         db.refresh(budget)
     else:
         budget.amount_cents = cents
         db.commit()
-    row = next(r for r in analytics.budget_rows(db) if r.id == budget.id)
+    row = next(r for r in analytics.budget_rows(db, None, user.id) if r.id == budget.id)
     return _budget_out(row)
 
 
 @router.delete("/budgets/{bid}", status_code=204)
-def delete_budget(bid: int, db: Session = Depends(get_db)):
-    budget = db.get(Budget, bid)
-    if budget is None:
-        raise HTTPException(404, f"No existe el presupuesto #{bid}")
+def delete_budget(bid: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    budget = _owned(db, Budget, bid, user.id, "el presupuesto")
     db.delete(budget)
     db.commit()
     return Response(status_code=204)
@@ -338,23 +381,29 @@ def _bill_out(row: analytics.BillRow, paid_at=None) -> BillOut:
 
 
 @router.get("/bills", response_model=list[BillOut])
-def list_bills(todos: int = 0, db: Session = Depends(get_db)):
-    bills = {b.id: b for b in db.scalars(select(Bill)).all()}
+def list_bills(todos: int = 0, user: User = Depends(get_current_user),
+               db: Session = Depends(get_db)):
+    bills = {
+        b.id: b
+        for b in db.scalars(select(Bill).where(Bill.user_id == user.id)).all()
+    }
     return [
         _bill_out(r, paid_at=bills[r.id].paid_at)
-        for r in analytics.bill_rows(db, solo_pendientes=not todos)
+        for r in analytics.bill_rows(db, user.id, solo_pendientes=not todos)
     ]
 
 
 @router.post("/bills", response_model=BillOut, status_code=201)
-def create_bill(payload: BillCreate, db: Session = Depends(get_db)):
+def create_bill(payload: BillCreate, user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
     descripcion = payload.description.strip()
     if not descripcion:
         raise HTTPException(400, "La descripción del vencimiento no puede estar vacía.")
-    cat = _find_category(db, payload.category, "expense")
+    cat = _find_category(db, user.id, payload.category, "expense")
     if payload.recurrence not in ("once", "monthly"):
         raise HTTPException(400, "La recurrencia debe ser 'once' o 'monthly'.")
     bill = Bill(
+        user_id=user.id,
         description=descripcion,
         amount_cents=money_to_cents(payload.amount),
         due_date=payload.due_date,
@@ -365,24 +414,25 @@ def create_bill(payload: BillCreate, db: Session = Depends(get_db)):
     db.add(bill)
     db.commit()
     db.refresh(bill)
-    row = next(r for r in analytics.bill_rows(db, solo_pendientes=False) if r.id == bill.id)
+    row = next(
+        r for r in analytics.bill_rows(db, user.id, solo_pendientes=False) if r.id == bill.id
+    )
     return _bill_out(row)
 
 
 @router.post("/bills/{bid}/pay", response_model=BillPayOut)
-def pay_bill(bid: int, db: Session = Depends(get_db)):
+def pay_bill(bid: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Marca un vencimiento como pagado y genera el gasto correspondiente.
 
     Si el vencimiento es mensual, además crea el siguiente (misma fecha del
     mes que viene) para no tener que cargarlo a mano cada mes.
     """
-    bill = db.get(Bill, bid)
-    if bill is None:
-        raise HTTPException(404, f"No existe el vencimiento #{bid}")
+    bill = _owned(db, Bill, bid, user.id, "el vencimiento")
     if bill.paid_at is not None:
         raise HTTPException(409, f"El vencimiento «{bill.description}» ya está pagado.")
 
     t = Transaction(
+        user_id=user.id,
         type="expense",
         amount_cents=bill.amount_cents,
         category_id=bill.category_id,
@@ -396,6 +446,7 @@ def pay_bill(bid: int, db: Session = Depends(get_db)):
     next_bill = None
     if bill.recurrence == "monthly":
         next_bill = Bill(
+            user_id=user.id,
             description=bill.description,
             amount_cents=bill.amount_cents,
             due_date=analytics.add_months(bill.due_date),
@@ -410,10 +461,13 @@ def pay_bill(bid: int, db: Session = Depends(get_db)):
     if next_bill is not None:
         db.refresh(next_bill)
         next_row = next(
-            r for r in analytics.bill_rows(db, solo_pendientes=False) if r.id == next_bill.id
+            r for r in analytics.bill_rows(db, user.id, solo_pendientes=False)
+            if r.id == next_bill.id
         )
 
-    row = next(r for r in analytics.bill_rows(db, solo_pendientes=False) if r.id == bill.id)
+    row = next(
+        r for r in analytics.bill_rows(db, user.id, solo_pendientes=False) if r.id == bill.id
+    )
     return BillPayOut(
         bill=_bill_out(row, paid_at=bill.paid_at),
         transaction_id=t.id,
@@ -422,10 +476,8 @@ def pay_bill(bid: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/bills/{bid}", status_code=204)
-def delete_bill(bid: int, db: Session = Depends(get_db)):
-    bill = db.get(Bill, bid)
-    if bill is None:
-        raise HTTPException(404, f"No existe el vencimiento #{bid}")
+def delete_bill(bid: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    bill = _owned(db, Bill, bid, user.id, "el vencimiento")
     db.delete(bill)
     db.commit()
     return Response(status_code=204)
@@ -436,9 +488,9 @@ def delete_bill(bid: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.get("/alerts", response_model=list[AlertOut])
-def list_alerts(db: Session = Depends(get_db)):
+def list_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return [AlertOut(severity=a.severity, kind=a.kind, message=a.message)
-            for a in analytics.all_alerts(db)]
+            for a in analytics.all_alerts(db, user.id)]
 
 
 # ---------------------------------------------------------------------------
@@ -446,23 +498,35 @@ def list_alerts(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.post("/transactions", response_model=TransactionOut, status_code=201)
-def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)):
-    cat = _find_category(db, payload.category)
+def create_transaction(payload: TransactionCreate, user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    cat = _find_category(db, user.id, payload.category)
     if cat.kind != payload.type:
         raise HTTPException(400, f"La categoría '{cat.name}' es de {cat.kind}, no de {payload.type}")
 
     goal = None
     if payload.goal and payload.goal.strip():
-        goal = db.scalar(select(SavingsGoal).where(SavingsGoal.name.ilike(payload.goal.strip())))
+        goal = db.scalar(
+            select(SavingsGoal).where(
+                SavingsGoal.user_id == user.id,
+                SavingsGoal.name.ilike(payload.goal.strip()),
+            )
+        )
         if goal is None:
             disponibles = ", ".join(
-                g.name for g in db.scalars(select(SavingsGoal).order_by(SavingsGoal.name)).all()
+                g.name
+                for g in db.scalars(
+                    select(SavingsGoal)
+                    .where(SavingsGoal.user_id == user.id)
+                    .order_by(SavingsGoal.name)
+                ).all()
             )
             raise HTTPException(
                 404, f"No existe el objetivo '{payload.goal}'. Disponibles: {disponibles or '(ninguno)'}"
             )
 
     t = Transaction(
+        user_id=user.id,
         type=payload.type,
         amount_cents=money_to_cents(payload.amount),
         category_id=cat.id,
@@ -484,15 +548,25 @@ def list_transactions(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     limite: int = 50,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = select(Transaction).join(Category)
+    q = (
+        select(Transaction)
+        .join(Category)
+        .where(Transaction.user_id == user.id, Category.user_id == user.id)
+    )
     if tipo:
         q = q.where(Transaction.type == tipo)
     if categoria:
         q = q.where(func.lower(Category.name) == categoria.strip().lower())
     if objetivo:
-        goal = db.scalar(select(SavingsGoal).where(SavingsGoal.name.ilike(objetivo.strip())))
+        goal = db.scalar(
+            select(SavingsGoal).where(
+                SavingsGoal.user_id == user.id,
+                SavingsGoal.name.ilike(objetivo.strip()),
+            )
+        )
         if goal is None:
             raise HTTPException(404, f"No existe el objetivo '{objetivo}'")
         q = q.where(Transaction.goal_id == goal.id)
@@ -507,10 +581,9 @@ def list_transactions(
 
 
 @router.delete("/transactions/{tid}", status_code=204)
-def delete_transaction(tid: int, db: Session = Depends(get_db)):
-    t = db.get(Transaction, tid)
-    if t is None:
-        raise HTTPException(404, f"No existe la transacción #{tid}")
+def delete_transaction(tid: int, user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    t = _owned(db, Transaction, tid, user.id, "la transacción")
     db.delete(t)
     db.commit()
     return Response(status_code=204)
@@ -524,9 +597,14 @@ def delete_transaction(tid: int, db: Session = Depends(get_db)):
 def summary(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = select(Transaction).join(Category)
+    q = (
+        select(Transaction)
+        .join(Category)
+        .where(Transaction.user_id == user.id, Category.user_id == user.id)
+    )
     d = _parse_iso(desde)
     if d:
         q = q.where(Transaction.date >= d)
@@ -570,7 +648,8 @@ def summary(
 # Agente
 # ---------------------------------------------------------------------------
 
-def _run_agent_safe(messages: list[dict], db: Session, pre_confirmed: dict | None = None):
+def _run_agent_safe(messages: list[dict], db: Session, pre_confirmed: dict | None = None,
+                    user_id: int = 0):
     """Corre el agente traduciendo una falla del proveedor a un 503 entendible.
 
     El proveedor es un servicio externo: una caída o un 500 suyo no es un error
@@ -578,21 +657,23 @@ def _run_agent_safe(messages: list[dict], db: Session, pre_confirmed: dict | Non
     quedaba sin explicación.
     """
     try:
-        return run_agent(messages, db, pre_confirmed=pre_confirmed)
+        return run_agent(messages, db, pre_confirmed=pre_confirmed, user_id=user_id)
     except ProviderError as exc:
         raise HTTPException(503, str(exc)) from exc
 
 @router.post("/agent/chat", response_model=AgentResponse)
-def agent_chat(payload: AgentChatRequest, db: Session = Depends(get_db)):
+def agent_chat(payload: AgentChatRequest, user: User = Depends(get_current_user),
+               db: Session = Depends(get_db)):
     messages = [{"role": m.role, "content": m.content} for m in payload.messages]
-    return _run_agent_safe(messages, db)
+    return _run_agent_safe(messages, db, user_id=user.id)
 
 
 @router.post("/agent/confirm", response_model=AgentResponse)
-def agent_confirm(payload: AgentConfirmRequest, db: Session = Depends(get_db)):
+def agent_confirm(payload: AgentConfirmRequest, user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
     messages = [{"role": m.role, "content": m.content} for m in payload.messages]
     pending = {
         "tool": payload.pending_action.tool,
         "args": payload.pending_action.args,
     }
-    return _run_agent_safe(messages, db, pre_confirmed=pending)
+    return _run_agent_safe(messages, db, pre_confirmed=pending, user_id=user.id)

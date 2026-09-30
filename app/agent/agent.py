@@ -27,11 +27,15 @@ MAX_ITERS = 6
 _SETTINGS = get_settings()
 
 
-def _categories_hint() -> str:
-    """Lista corta de categorías para que el modelo no pregunte."""
+def _categories_hint(user_id: int) -> str:
+    """Lista corta de categorías DEL USUARIO para que el modelo no pregunte."""
     db = SessionLocal()
     try:
-        rows = db.execute(select(Category.name, Category.kind).order_by(Category.kind, Category.name)).all()
+        rows = db.execute(
+            select(Category.name, Category.kind)
+            .where(Category.user_id == user_id)
+            .order_by(Category.kind, Category.name)
+        ).all()
         income = ", ".join(n for n, k in rows if k == "income") or "(ninguna)"
         expense = ", ".join(n for n, k in rows if k == "expense") or "(ninguna)"
         return f"Categorías válidas — ingreso: {income}. Gasto: {expense}."
@@ -90,24 +94,26 @@ def _assistant_tool_message(tc: ToolCall, call_id: str) -> dict:
     }
 
 
-def _execute(tc: ToolCall, db: Session) -> str:
+def _execute(tc: ToolCall, db: Session, user_id: int) -> str:
     try:
-        return T.execute_tool(tc.name, tc.arguments, db)
+        return T.execute_tool(tc.name, tc.arguments, db, user_id)
     except (ValueError, TypeError) as exc:
         return f"Error ejecutando {tc.name}: {exc}"
 
 
-def run_agent(messages: list[dict], db: Session, pre_confirmed: dict | None = None) -> dict:
+def run_agent(messages: list[dict], db: Session, pre_confirmed: dict | None = None,
+              user_id: int = 0) -> dict:
     """Corre el bucle agente→herramientas.
 
     - `pre_confirmed`: cuando el usuario confirmó una acción sensible, se
       ejecuta primero esa acción y se continúa el diálogo.
+    - `user_id`: el dueño de todos los datos que el agente puede ver y tocar.
     """
     provider = get_provider()
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         today=date.today().isoformat(),
         currency=_SETTINGS.currency,
-        categories_hint=_categories_hint(),
+        categories_hint=_categories_hint(user_id),
     )
     full: list[dict] = [{"role": "system", "content": system_prompt}]
     full.extend(_clean(messages))
@@ -117,7 +123,7 @@ def run_agent(messages: list[dict], db: Session, pre_confirmed: dict | None = No
         tc = ToolCall(pre_confirmed["tool"], pre_confirmed["args"])
         call_id = "call_confirmed"
         full.append(_assistant_tool_message(tc, call_id))
-        full.append({"role": "tool", "tool_call_id": call_id, "content": _execute(tc, db)})
+        full.append({"role": "tool", "tool_call_id": call_id, "content": _execute(tc, db, user_id)})
         executed_first = True
 
     for i in range(MAX_ITERS):
@@ -141,7 +147,7 @@ def run_agent(messages: list[dict], db: Session, pre_confirmed: dict | None = No
 
         call_id = f"call_{tc.name}_{i}"
         full.append(_assistant_tool_message(tc, call_id))
-        full.append({"role": "tool", "tool_call_id": call_id, "content": _execute(tc, db)})
+        full.append({"role": "tool", "tool_call_id": call_id, "content": _execute(tc, db, user_id)})
         # continuamos el bucle: el modelo verá el resultado y decidirá
 
     return _answer("No llegué a completar la respuesta. Probá reformular la pregunta.")

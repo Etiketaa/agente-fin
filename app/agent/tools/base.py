@@ -65,8 +65,8 @@ def parse_date(value: str | None) -> date | None:
         raise ValueError(f"Fecha inválida: '{value}'. Usá el formato YYYY-MM-DD.")
 
 
-def find_category(db: Session, name: str, kind: str | None = None) -> Category:
-    """Busca una categoría por nombre (sin distinguir mayúsculas, con fuzzy match).
+def find_category(db: Session, user_id: int, name: str, kind: str | None = None) -> Category:
+    """Busca una categoría DEL USUARIO por nombre (sin distinguir mayúsculas, con fuzzy match).
 
     Acepta coincidencia exacta, contenida (\"comida\" → \"Comida\"),
     o que el nombre de la categoría esté contenido en la query (\"supermercado\" → \"Comida\").
@@ -74,14 +74,19 @@ def find_category(db: Session, name: str, kind: str | None = None) -> Category:
     normalized = name.strip().lower()
 
     # 1. Exact match (case-insensitive)
-    cat = db.scalar(select(Category).where(func.lower(Category.name) == normalized))
+    cat = db.scalar(
+        select(Category).where(
+            Category.user_id == user_id,
+            func.lower(Category.name) == normalized,
+        )
+    )
     if cat:
         if kind and cat.kind != kind:
             raise ValueError(f"La categoría '{cat.name}' es de tipo '{cat.kind}', no de '{kind}'.")
         return cat
 
     # 2. Query contains category name (e.g. "presupuesto para comida" → "Comida")
-    all_cats = db.scalars(select(Category)).all()
+    all_cats = db.scalars(select(Category).where(Category.user_id == user_id)).all()
     for c in all_cats:
         if c.name.lower() in normalized:
             if kind and c.kind != kind:
@@ -97,12 +102,16 @@ def find_category(db: Session, name: str, kind: str | None = None) -> Category:
 
     # Sin match: error con catálogo
     raise ValueError(
-        f"No existe la categoría '{name}'. {category_catalogue(db)}"
+        f"No existe la categoría '{name}'. {category_catalogue(db, user_id)}"
     )
 
 
-def category_catalogue(db: Session) -> str:
-    rows = db.scalars(select(Category).order_by(Category.kind, Category.name)).all()
+def category_catalogue(db: Session, user_id: int) -> str:
+    rows = db.scalars(
+        select(Category)
+        .where(Category.user_id == user_id)
+        .order_by(Category.kind, Category.name)
+    ).all()
     income = ", ".join(c.name for c in rows if c.kind == "income") or "(ninguna)"
     expense = ", ".join(c.name for c in rows if c.kind == "expense") or "(ninguna)"
     return f"Categorías de ingreso: {income}. Categorías de gasto: {expense}."

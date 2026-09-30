@@ -14,8 +14,10 @@ def _vehicle_line(v: Vehicle) -> str:
     return f"  - #{v.id} {v.name} ({v.kind})" + (f" — {v.notes}" if v.notes else "")
 
 
-def listar_vehiculos(db: Session, args: dict) -> str:
-    vehiculos = db.scalars(select(Vehicle).order_by(Vehicle.id)).all()
+def listar_vehiculos(db: Session, args: dict, user_id: int) -> str:
+    vehiculos = db.scalars(
+        select(Vehicle).where(Vehicle.user_id == user_id).order_by(Vehicle.id)
+    ).all()
     if not vehiculos:
         return "No hay vehículos cargados. Podés crear uno con «creá un vehículo llamado Moto Honda tipo moto»."
     lines = ["Vehículos:"]
@@ -23,7 +25,7 @@ def listar_vehiculos(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def crear_vehiculo(db: Session, args: dict) -> str:
+def crear_vehiculo(db: Session, args: dict, user_id: int) -> str:
     name = str(args.get("nombre", "")).strip()
     kind = str(args.get("tipo", "")).strip().lower()  # moto | auto | otro
     notes = str(args.get("notas", "")).strip()
@@ -33,21 +35,23 @@ def crear_vehiculo(db: Session, args: dict) -> str:
     if kind not in ("moto", "auto", "otro"):
         raise ValueError("Tipo debe ser: moto, auto u otro.")
 
-    existing = db.scalar(select(Vehicle).where(Vehicle.name == name))
+    existing = db.scalar(
+        select(Vehicle).where(Vehicle.user_id == user_id, Vehicle.name == name)
+    )
     if existing:
         raise ValueError(f"Ya existe un vehículo llamado '{name}'.")
 
-    v = Vehicle(name=name, kind=kind, notes=notes)
+    v = Vehicle(user_id=user_id, name=name, kind=kind, notes=notes)
     db.add(v)
     db.commit()
     db.refresh(v)
     return f"Vehículo «{v.name}» ({v.kind}) creado (#{v.id})."
 
 
-def eliminar_vehiculo(db: Session, args: dict) -> str:
+def eliminar_vehiculo(db: Session, args: dict, user_id: int) -> str:
     vid = int(args.get("id", 0))
     v = db.get(Vehicle, vid)
-    if v is None:
+    if v is None or v.user_id != user_id:
         raise ValueError(f"No existe el vehículo #{vid}.")
     name = v.name
     db.delete(v)

@@ -118,12 +118,18 @@ class LocalClassifier:
         self.categories: list[str] = []
         self._trained = False
 
-    def train(self, db: Session) -> int:
-        """Entrena con todas las transacciones existentes que tengan categoría."""
+    def train(self, db: Session, user_id: int) -> int:
+        """Entrena con las transacciones DEL USUARIO que tengan categoría."""
         if not _SKLEARN_OK:
             return 0
         txs = db.scalars(
-            select(Transaction).join(Category).where(Transaction.category_id.is_not(None))
+            select(Transaction)
+            .join(Category)
+            .where(
+                Transaction.user_id == user_id,
+                Category.user_id == user_id,
+                Transaction.category_id.is_not(None),
+            )
         ).all()
         if len(txs) < 10:
             return 0
@@ -209,14 +215,18 @@ def _infer_columns(row: dict) -> dict:
     return out
 
 
-def preview_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = None) -> ImportPreview:
+def preview_csv(db: Session, user_id: int, path: str,
+                classifier: Optional[LocalClassifier] = None) -> ImportPreview:
     """Analiza el CSV y devuelve preview sin escribir en BD."""
     rows = _read_csv(path)
     if not rows:
         return ImportPreview(0, 0, 0, 0, [], [])
 
     existing_hashes = {
-        h for (h,) in db.execute(select(Transaction.import_hash)).all()
+        h
+        for (h,) in db.execute(
+            select(Transaction.import_hash).where(Transaction.user_id == user_id)
+        ).all()
         if h
     }
 
@@ -240,7 +250,12 @@ def preview_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = 
             # Categoría: si no viene, intentar clasificar
             cat_id = None
             if cat_name:
-                cat = db.scalar(select(Category).where(Category.name.ilike(cat_name)))
+                cat = db.scalar(
+                    select(Category).where(
+                        Category.user_id == user_id,
+                        Category.name.ilike(cat_name),
+                    )
+                )
                 if cat:
                     cat_id = cat.id
                 else:
@@ -250,7 +265,12 @@ def preview_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = 
                 if pred:
                     cat_name, conf = pred
                     if conf > 0.6:
-                        cat = db.scalar(select(Category).where(Category.name == cat_name))
+                        cat = db.scalar(
+                            select(Category).where(
+                                Category.user_id == user_id,
+                                Category.name == cat_name,
+                            )
+                        )
                         if cat:
                             cat_id = cat.id
 
@@ -282,13 +302,14 @@ def preview_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = 
     )
 
 
-def import_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = None, confirm: bool = True) -> ImportResult:
+def import_csv(db: Session, user_id: int, path: str,
+               classifier: Optional[LocalClassifier] = None, confirm: bool = True) -> ImportResult:
     """Importa el CSV a la base de datos.
 
     Si `confirm=False`, solo hace preview (útil para el agente).
     """
     if confirm:
-        preview = preview_csv(db, path, classifier)
+        preview = preview_csv(db, user_id, path, classifier)
         if preview.new_rows == 0:
             return ImportResult(0, preview.duplicates, ["Nada nuevo para importar"])
 
@@ -298,9 +319,12 @@ def import_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = N
     errors: list[str] = []
     seen_hashes = set()
 
-    # Cargar hashes existentes
+    # Cargar hashes existentes (solo los del usuario: el dedup no cruza usuarios)
     existing_hashes = {
-        h for (h,) in db.execute(select(Transaction.extra_data)).all()  # type: ignore
+        h
+        for (h,) in db.execute(
+            select(Transaction.import_hash).where(Transaction.user_id == user_id)
+        ).all()
         if h
     }
 
@@ -315,7 +339,12 @@ def import_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = N
 
             cat_id = None
             if cat_name:
-                cat = db.scalar(select(Category).where(Category.name.ilike(cat_name)))
+                cat = db.scalar(
+                    select(Category).where(
+                        Category.user_id == user_id,
+                        Category.name.ilike(cat_name),
+                    )
+                )
                 if cat:
                     cat_id = cat.id
                 else:
@@ -326,7 +355,12 @@ def import_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = N
                 if pred:
                     cat_name, conf = pred
                     if conf > 0.6:
-                        cat = db.scalar(select(Category).where(Category.name == cat_name))
+                        cat = db.scalar(
+                            select(Category).where(
+                                Category.user_id == user_id,
+                                Category.name == cat_name,
+                            )
+                        )
                         if cat:
                             cat_id = cat.id
 
@@ -340,6 +374,7 @@ def import_csv(db: Session, path: str, classifier: Optional[LocalClassifier] = N
                 continue
 
             tx = Transaction(
+                user_id=user_id,
                 type=typ,
                 amount_cents=amt,
                 description=desc,

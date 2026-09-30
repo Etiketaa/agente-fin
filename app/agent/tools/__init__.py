@@ -68,11 +68,11 @@ _SENSIBLE_POR_MONTO = {
 }
 
 
-def execute_tool(name: str, args: dict, db: Session) -> str:
+def execute_tool(name: str, args: dict, db: Session, user_id: int) -> str:
     impl = _IMPLS.get(name)
     if impl is None:
         raise ValueError(f"Herramienta desconocida: {name}")
-    return impl(db, args)  # type: ignore[operator]
+    return impl(db, args, user_id)  # type: ignore[operator]
 
 
 # ---------------------------------------------------------------------------

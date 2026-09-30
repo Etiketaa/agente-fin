@@ -1,4 +1,4 @@
-"""Punto de entrada: app FastAPI + estáticos + seed de categorías."""
+"""Punto de entrada: app FastAPI + estáticos + seed de categorías por usuario."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -10,7 +10,7 @@ from sqlalchemy import inspect, select
 
 from .api import router
 from .db import Base, SessionLocal, engine
-from .models import Category, Vehicle
+from .models import User
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -19,16 +19,18 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # de una versión anterior rompería más adelante con un "no such column" dentro de
 # una consulta, lejos de la causa real.
 EXPECTED_COLUMNS: dict[str, set[str]] = {
-    "categories": {"id", "name", "kind", "created_at"},
-    "vehicles": {"id", "name", "kind", "notes", "created_at"},
+    "users": {"id", "username", "password_hash", "created_at"},
+    "user_sessions": {"id", "user_id", "token_hash", "created_at"},
+    "categories": {"id", "user_id", "name", "kind", "created_at"},
+    "vehicles": {"id", "user_id", "name", "kind", "notes", "created_at"},
     "transactions": {
-        "id", "type", "amount_cents", "description", "date", "category_id",
+        "id", "user_id", "type", "amount_cents", "description", "date", "category_id",
         "goal_id", "tags", "vehicle_id", "import_hash", "created_at",
     },
-    "savings_goals": {"id", "name", "target_cents", "target_date", "notes", "created_at"},
-    "budgets": {"id", "category_id", "amount_cents", "rollover_cents", "created_at"},
+    "savings_goals": {"id", "user_id", "name", "target_cents", "target_date", "notes", "created_at"},
+    "budgets": {"id", "user_id", "category_id", "amount_cents", "rollover_cents", "created_at"},
     "bills": {
-        "id", "description", "amount_cents", "due_date", "category_id",
+        "id", "user_id", "description", "amount_cents", "due_date", "category_id",
         "recurrence", "paid_at", "notes", "created_at",
     },
 }
@@ -53,40 +55,21 @@ def ensure_schema() -> None:
                 f"(SQLite: ALTER TABLE {tabla} ADD COLUMN ...)."
             )
 
-DEFAULT_CATEGORIES = [
-    ("Sueldo", "income"),
-    ("Freelance", "income"),
-    ("Otros ingresos", "income"),
-    ("Comida", "expense"),
-    ("Transporte", "expense"),
-    ("Vivienda", "expense"),
-    ("Servicios", "expense"),
-    ("Salud", "expense"),
-    ("Educación", "expense"),
-    ("Ocio", "expense"),
-    ("Motos", "expense"),
-    ("Compras", "expense"),
-    ("Otros", "expense"),
-]
-
-
-def seed_categories() -> None:
-    db = SessionLocal()
-    try:
-        existing = {name for (name,) in db.execute(select(Category.name)).all()}
-        for name, kind in DEFAULT_CATEGORIES:
-            if name not in existing:
-                db.add(Category(name=name, kind=kind))
-        db.commit()
-    finally:
-        db.close()
-
-
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_schema()
     Base.metadata.create_all(engine)
-    seed_categories()
+    # Ya no se siembran categorías globales: cada usuario recibe las suyas al
+    # registrarse (ver app/seed.py). Los usuarios existentes sin categorías las
+    # reciben en el primer request autenticado (get_current_user las completa).
+    from .seed import DEFAULT_CATEGORIES, seed_user_categories
+
+    db = SessionLocal()
+    try:
+        for user in db.scalars(select(User)).all():
+            seed_user_categories(db, user)
+    finally:
+        db.close()
     yield
 
 

@@ -27,11 +27,11 @@ def _row_line(row: analytics.BudgetRow) -> str:
     return "  - " + " | ".join(partes)
 
 
-def listar_presupuestos(db: Session, args: dict) -> str:
+def listar_presupuestos(db: Session, args: dict, user_id: int) -> str:
     # Si el mes viene mal formado, month_bounds lanza ValueError y el bucle del
     # agente se lo devuelve al modelo como error, para que lo corrija solo.
     mes = str(args.get("mes", "")).strip() or None
-    rows = analytics.budget_rows(db, mes)
+    rows = analytics.budget_rows(db, mes, user_id)
     if not rows:
         return (
             "No hay presupuestos cargados. Podés crear uno con "
@@ -48,8 +48,8 @@ def listar_presupuestos(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def definir_presupuesto(db: Session, args: dict) -> str:
-    cat = find_category(db, str(args.get("categoria", "")), "expense")
+def definir_presupuesto(db: Session, args: dict, user_id: int) -> str:
+    cat = find_category(db, user_id, str(args.get("categoria", "")), "expense")
     monto = float(args.get("monto", 0))
     if monto <= 0:
         raise ValueError("El monto del presupuesto debe ser mayor a cero.")
@@ -59,9 +59,11 @@ def definir_presupuesto(db: Session, args: dict) -> str:
     # porque es un tope mensual fijo; se filtra por mes en analytics.budget_rows.
     _ = args.get("mes")  # se ignora, pero se acepta para compatibilidad
 
-    budget = db.scalar(select(Budget).where(Budget.category_id == cat.id))
+    budget = db.scalar(
+        select(Budget).where(Budget.user_id == user_id, Budget.category_id == cat.id)
+    )
     if budget is None:
-        budget = Budget(category_id=cat.id, amount_cents=cents)
+        budget = Budget(user_id=user_id, category_id=cat.id, amount_cents=cents)
         db.add(budget)
         db.commit()
         db.refresh(budget)
@@ -75,10 +77,10 @@ def definir_presupuesto(db: Session, args: dict) -> str:
     )
 
 
-def eliminar_presupuesto(db: Session, args: dict) -> str:
+def eliminar_presupuesto(db: Session, args: dict, user_id: int) -> str:
     bid = int(args.get("id", 0))
     budget = db.get(Budget, bid)
-    if budget is None:
+    if budget is None or budget.user_id != user_id:
         raise ValueError(f"No existe el presupuesto #{bid}.")
     nombre = budget.category.name
     db.delete(budget)

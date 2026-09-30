@@ -8,29 +8,31 @@ from ...analytics import detect_anomalies
 from ..provider import get_provider
 
 
-# Variable global para el clasificador (se entrena a demanda)
-_classifier: importer.LocalClassifier | None = None
+# Un clasificador por usuario (se entrena a demanda con SUS datos).
+# Compartir uno global filtraría patrones de gasto entre usuarios.
+_classifiers: dict[int, importer.LocalClassifier] = {}
 
 
-def _get_classifier(db: Session) -> importer.LocalClassifier:
-    global _classifier
-    if _classifier is None:
-        _classifier = importer.LocalClassifier()
-    if not _classifier.is_ready():
-        n = _classifier.train(db)
+def _get_classifier(db: Session, user_id: int) -> importer.LocalClassifier:
+    clf = _classifiers.get(user_id)
+    if clf is None:
+        clf = importer.LocalClassifier()
+        _classifiers[user_id] = clf
+    if not clf.is_ready():
+        n = clf.train(db, user_id)
         if n:
             print(f"[classifier] Entrenado con {n} transacciones")
-    return _classifier
+    return clf
 
 
-def preview_importar_csv(db: Session, args: dict) -> str:
+def preview_importar_csv(db: Session, args: dict, user_id: int) -> str:
     """Vista previa de lo que se importaría (sin escribir)."""
     path = str(args.get("archivo", "")).strip()
     if not path:
         raise ValueError("Falta el parámetro 'archivo' (ruta al CSV).")
 
-    clf = _get_classifier(db)
-    preview = importer.preview_csv(db, path, clf)
+    clf = _get_classifier(db, user_id)
+    preview = importer.preview_csv(db, user_id, path, clf)
 
     if preview.total_rows == 0:
         return "El archivo está vacío o no se pudo leer."
@@ -53,14 +55,14 @@ def preview_importar_csv(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def importar_csv(db: Session, args: dict) -> str:
+def importar_csv(db: Session, args: dict, user_id: int) -> str:
     """Importa un CSV de movimientos bancarios."""
     path = str(args.get("archivo", "")).strip()
     if not path:
         raise ValueError("Falta el parámetro 'archivo' (ruta al CSV).")
 
-    clf = _get_classifier(db)
-    result = importer.import_csv(db, path, clf, confirm=True)
+    clf = _get_classifier(db, user_id)
+    result = importer.import_csv(db, user_id, path, clf, confirm=True)
 
     lines = [f"✅ Importación completada: {result.created} movimientos nuevos"]
     if result.skipped_duplicates:
@@ -74,22 +76,22 @@ def importar_csv(db: Session, args: dict) -> str:
     return "\n".join(lines)
 
 
-def entrenar_clasificador(db: Session, args: dict) -> str:
+def entrenar_clasificador(db: Session, args: dict, user_id: int) -> str:
     """Reentrena el clasificador local con todos los datos actuales."""
-    global _classifier
-    _classifier = importer.LocalClassifier()
-    n = _classifier.train(db)
+    clf = importer.LocalClassifier()
+    _classifiers[user_id] = clf
+    n = clf.train(db, user_id)
     if n:
         return f"Clasificador entrenado con {n} transacciones."
     return "No hay suficientes transacciones categorizadas para entrenar (mínimo 10)."
 
 
-def listar_anomalias(db: Session, args: dict) -> str:
+def listar_anomalias(db: Session, args: dict, user_id: int) -> str:
     """Detecta gastos que se desvían mucho del patrón histórico."""
     mes = str(args.get("mes", "")).strip() or None
     threshold = float(args.get("umbral", 150.0))
 
-    anomalies = detect_anomalies(db, mes, threshold)
+    anomalies = detect_anomalies(db, mes, threshold, user_id)
 
     if not anomalies:
         return "No se detectaron anomalías (ningún gasto supera el umbral)."
