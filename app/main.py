@@ -25,7 +25,7 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     "vehicles": {"id", "user_id", "name", "kind", "notes", "created_at"},
     "transactions": {
         "id", "user_id", "type", "amount_cents", "description", "date", "category_id",
-        "goal_id", "tags", "vehicle_id", "import_hash", "created_at",
+        "goal_id", "tags", "vehicle_id", "import_hash", "source", "created_at",
     },
     "savings_goals": {"id", "user_id", "name", "target_cents", "target_date", "notes", "created_at"},
     "budgets": {"id", "user_id", "category_id", "amount_cents", "rollover_cents", "created_at"},

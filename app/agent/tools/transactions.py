@@ -59,6 +59,11 @@ def registrar_transaccion(db: Session, args: dict, user_id: int) -> str:
                 f"Objetivos disponibles: {nombres or '(ninguno)'}."
             )
 
+    # La procedencia solo aplica a ingresos (quién pagó / de dónde vino).
+    fuente = str(args.get("fuente", "")).strip() or None
+    if tipo != "income":
+        fuente = None
+
     t = Transaction(
         user_id=user_id,
         type=tipo,
@@ -67,15 +72,17 @@ def registrar_transaccion(db: Session, args: dict, user_id: int) -> str:
         goal_id=goal.id if goal else None,
         description=str(args.get("descripcion", "")).strip(),
         date=parse_date(args.get("fecha")) or date.today(),
+        source=fuente,
     )
     db.add(t)
     db.commit()
     db.refresh(t)
     desc = f" — {t.description}" if t.description else ""
     destino = f" asignado al objetivo «{goal.name}»" if goal else ""
+    origen = f" (de {fuente})" if fuente else ""
     return (
         f"Transacción #{t.id} registrada: {fmt(t.amount_cents)} "
-        f"({tipo}) en {cat.name} el {t.date.isoformat()}{desc}{destino}."
+        f"({tipo}) en {cat.name} el {t.date.isoformat()}{desc}{destino}{origen}."
     )
 
 
@@ -258,6 +265,7 @@ SCHEMAS = [
                     "descripcion": {"type": "string", "description": "Descripción corta (opcional)"},
                     "fecha": {"type": "string", "description": "Fecha YYYY-MM-DD (opcional, por defecto hoy)"},
                     "objetivo": {"type": "string", "description": "Nombre exacto del objetivo de ahorro al que se asigna (opcional)"},
+                    "fuente": {"type": "string", "description": "Procedencia del ingreso: quién pagó (cliente, empresa). Solo para tipo=income."},
                 },
                 "required": ["tipo", "monto", "categoria"],
                 "additionalProperties": False,

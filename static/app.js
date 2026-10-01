@@ -150,6 +150,9 @@ function syncCategoryOptions() {
     select.appendChild(opt);
   }
   if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+
+  // La procedencia solo tiene sentido en ingresos.
+  $("#tx-source-wrap").classList.toggle("hidden", kind !== "income");
 }
 
 function syncBudgetCategories() {
@@ -216,10 +219,11 @@ async function renderTransactions() {
     const tr = document.createElement("tr");
     const isIncome = t.type === "income";
     const goal = t.goal ? `<span class="tag goal" title="Aporte a un objetivo">🎯 ${esc(t.goal)}</span>` : "";
+    const fuente = t.source ? `<span class="tag source" title="Procedencia">💵 ${esc(t.source)}</span>` : "";
     tr.innerHTML = `
       <td>${esc(t.date)}</td>
       <td>${esc(t.category)}</td>
-      <td>${esc(t.description || "—")} ${goal}</td>
+      <td>${esc(t.description || "—")} ${fuente} ${goal}</td>
       <td><span class="tag ${t.type}">${isIncome ? "Ingreso" : "Gasto"}</span></td>
       <td class="num ${isIncome ? "pos" : "neg"}">${moneyFmt(t.amount)}</td>
       <td><button class="btn ghost small-btn" data-del="${t.id}" title="Eliminar">✕</button></td>`;
@@ -258,6 +262,40 @@ async function loadAlerts() {
   box.classList.remove("hidden");
 }
 
+// Ingresos del mes actual: total, por procedencia y por día.
+async function renderIncome() {
+  const data = await api("/api/income");
+  $("#income-head").innerHTML = data.count
+    ? `<strong>${moneyFmt(data.total)}</strong> <span class="muted">en ${data.count} cobro(s) durante ${esc(data.month)}</span>`
+    : "";
+  const src = $("#income-sources");
+  const days = $("#income-days");
+  if (!data.count) {
+    src.innerHTML = "";
+    days.innerHTML = `<div class="no-data">Sin ingresos en este mes todavía.</div>`;
+    return;
+  }
+  const maxSrc = Math.max(...data.by_source.map((s) => s.total));
+  src.innerHTML = data.by_source.map((s) => {
+    const p = Math.round((s.total / maxSrc) * 100);
+    return `
+      <div class="bar-row">
+        <div class="bar-top"><span>${esc(s.source)} <span class="muted">(${s.count})</span></span><span class="num pos">${moneyFmt(s.total)}</span></div>
+        <div class="bar-track"><div class="bar-fill income-fill" style="width:${p}%"></div></div>
+      </div>`;
+  }).join("");
+  days.innerHTML = data.days.map((d) => {
+    const items = d.items.map((t) =>
+      `<li>💵 <strong>${esc(t.source || "(sin procedencia)")}</strong> · ${t.description ? esc(t.description) + " · " : ""}<span class="num pos">${moneyFmt(t.amount)}</span></li>`
+    ).join("");
+    return `
+      <div class="income-day">
+        <div class="income-day-head"><span>${esc(d.date)}</span><span class="num pos">${moneyFmt(d.total)}</span></div>
+        <ul>${items}</ul>
+      </div>`;
+  }).join("");
+}
+
 async function refreshPanel() {
   // allSettled y no all: si un endpoint falla, el resto del panel tiene que
   // seguir mostrando algo. Con Promise.all, un solo fallo dejaba el panel a
@@ -268,6 +306,7 @@ async function refreshPanel() {
     ["objetivos", loadGoals],
     ["presupuestos", loadBudgets],
     ["vencimientos", loadBills],
+    ["ingresos", renderIncome],
     ["alertas", loadAlerts],
   ];
   const fallos = await Promise.allSettled(tareas.map(([, fn]) => fn()));
@@ -568,13 +607,16 @@ async function onSubmitTx(e) {
   e.preventDefault();
   const btn = e.target.querySelector("button[type=submit]");
   const amount = parseFloat($("#tx-amount").value);
+  const esIngreso = $("#tx-type").value === "income";
   const payload = {
-    type: $("#tx-type").value,
+    type: esIngreso ? "income" : "expense",
     amount,
     category: $("#tx-category").value,
     goal: $("#tx-goal").value || null,
     description: $("#tx-description").value.trim(),
     date: $("#tx-date").value || null,
+    // La procedencia solo se manda en ingresos; en gastos se ignora.
+    source: esIngreso ? ($("#tx-source").value.trim() || null) : null,
   };
   setBusy(btn, true);
   try {

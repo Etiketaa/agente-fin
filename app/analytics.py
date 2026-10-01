@@ -449,6 +449,48 @@ def add_months(d: date, months: int = 1) -> date:
 
 
 # ---------------------------------------------------------------------------
+# Ingresos del mes (por procedencia y por día)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class IncomeRow:
+    """Vista de un ingreso para la tarjeta «Ingresos del mes»."""
+    id: int
+    date: date
+    amount_cents: int
+    category: str
+    source: str  # "(sin procedencia)" si viene vacío
+    description: str
+
+
+def income_rows(db: Session, user_id: int, month: str | None = None) -> list[IncomeRow]:
+    """Ingresos del mes pedido (por defecto, el actual), más viejos primero."""
+    start, end = month_bounds(month)
+    txs = db.scalars(
+        select(Transaction)
+        .join(Category)
+        .where(
+            Transaction.user_id == user_id,
+            Category.user_id == user_id,
+            Transaction.type == "income",
+            Transaction.date >= start,
+            Transaction.date <= end,
+        ).order_by(Transaction.date, Transaction.id)
+    ).all()
+    return [
+        IncomeRow(
+            id=t.id,
+            date=t.date,
+            amount_cents=t.amount_cents,
+            category=t.category.name,
+            source=(t.source or "").strip() or "(sin procedencia)",
+            description=t.description or "",
+        )
+        for t in txs
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Centro de alertas (una sola fuente para el panel y el agente)
 # ---------------------------------------------------------------------------
 

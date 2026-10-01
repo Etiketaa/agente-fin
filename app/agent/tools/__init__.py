@@ -97,6 +97,8 @@ def summarize_action(name: str, args: dict) -> str:
     if name == "registrar_transaccion":
         tipo = "ingreso" if args.get("tipo") == "income" else "gasto"
         texto = f"Registrar {tipo} de {fmt_amount(args.get('monto'))} en «{args.get('categoria')}»"
+        if args.get("fuente"):
+            texto += f" de {args['fuente']}"
         if args.get("objetivo"):
             texto += f" (al objetivo «{args['objetivo']}»)"
         if args.get("descripcion"):

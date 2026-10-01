@@ -116,6 +116,11 @@
                 <option value="">— sin objetivo —</option>
               </select>
             </label>
+            <!-- Solo visible cuando el tipo es Ingreso: de dónde vino la plata -->
+            <label id="tx-source-wrap" class="hidden">Procedencia
+              <input type="text" id="tx-source" name="source" maxlength="80"
+                     placeholder="Cliente X, Empresa Y, Mercado Pago..." />
+            </label>
             <label>Descripción
               <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
             </label>
@@ -127,6 +132,17 @@
           <h2>Gastos por categoría</h2>
           <div id="category-bars"></div>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Ingresos del mes</h2>
+          <p class="muted small">Lo que entró en el mes actual, por procedencia y por día.
+            De cada cobro: cargá un ingreso con su «Procedencia» en el formulario de arriba.</p>
+        </div>
+        <div class="income-head" id="income-head"></div>
+        <div id="income-sources" class="income-sources"></div>
+        <div id="income-days" class="income-days"></div>
       </div>
 
       <div class="card">

@@ -176,6 +176,23 @@ tr:hover td { background: #f8fafc; }
 .tag.income { background: #dcfce7; color: #166534; }
 .tag.expense { background: #fee2e2; color: #991b1b; }
 .tag.goal { background: #ede9fe; color: #5b21b6; font-weight: 600; }
+.tag.source { background: #ecfdf5; color: #065f46; font-weight: 600; text-transform: none; }
+
+/* ---------- Ingresos del mes ---------- */
+.income-head { margin-bottom: 10px; font-size: 1rem; }
+.income-sources { margin-bottom: 14px; }
+.income-fill { background: var(--income); }
+.income-day { border-top: 1px solid var(--border); padding: 8px 0 6px; }
+.income-day-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.income-day ul { margin: 0; padding-left: 2px; list-style: none; font-size: 0.9rem; }
+.income-day li { padding: 3px 0; }
+.income-day li .num { float: right; }
 
 /* ---------- Formularios en línea ---------- */
 .card-head { margin-bottom: 14px; }

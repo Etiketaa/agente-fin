@@ -228,6 +228,30 @@ def _run(c: Cleanup):
           abs(s["balance"] - (s["total_income"] - s["total_expense"])) < 0.01)
     check("hay ingresos y gastos", s["total_income"] > 0 and s["total_expense"] > 0)
 
+    print("\n[ingresos con procedencia]")
+    inc1 = req("POST", "/api/transactions", {
+        "type": "income", "amount": 45000, "category": "Freelance",
+        "source": "Cliente X"})
+    c.txs.append(inc1["id"])
+    check("el ingreso guarda la procedencia", inc1["source"] == "Cliente X")
+    inc2 = req("POST", "/api/transactions", {
+        "type": "income", "amount": 15000, "category": "Freelance",
+        "source": "Cliente X", "description": "segundo cobro"})
+    c.txs.append(inc2["id"])
+    g = req("POST", "/api/transactions", {
+        "type": "expense", "amount": 500, "category": "Comida", "source": "no debería quedar"})
+    c.txs.append(g["id"])
+    check("la procedencia se ignora en gastos", g["source"] is None)
+
+    inc = req("GET", "/api/income")
+    check("income cuenta los ingresos del mes", inc["count"] >= 2)
+    fuente_x = next((f for f in inc["by_source"] if f["source"] == "Cliente X"), None)
+    check("subtotal por procedencia suma los dos cobros",
+          fuente_x is not None and fuente_x["total_cents"] == inc1["amount_cents"] + inc2["amount_cents"])
+    check("la vista diaria contiene días con items",
+          bool(inc["days"]) and len(inc["days"][0]["items"]) > 0)
+    expect_error("mes de ingresos mal formado", lambda: req("GET", "/api/income?mes=no-fecha"), 400)
+
     # ------------------------------------------------------------------ metas
     print("\n[objetivos de ahorro]")
     g = req("POST", "/api/goals", {"name": "Fondo smoke", "target_amount": 1000000})

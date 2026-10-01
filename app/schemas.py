@@ -20,6 +20,9 @@ class TransactionCreate(BaseModel):
     goal: str | None = Field(
         default=None, description="Nombre del objetivo de ahorro al que se asigna (opcional)"
     )
+    source: str | None = Field(
+        default=None, description="Procedencia del ingreso (cliente, fuente). Solo para type=income."
+    )
 
 
 class TransactionOut(BaseModel):
@@ -31,6 +34,31 @@ class TransactionOut(BaseModel):
     description: str
     date: Date
     goal: str | None = None
+    source: str | None = None
+
+
+class IncomeSourceTotal(BaseModel):
+    source: str
+    total: float
+    total_cents: int
+    count: int
+
+
+class IncomeDay(BaseModel):
+    date: Date
+    total: float
+    total_cents: int
+    items: list["TransactionOut"]
+
+
+class IncomeMonthOut(BaseModel):
+    """Vista de ingresos del mes: total, por procedencia y por día."""
+    month: str  # "YYYY-MM"
+    total: float
+    total_cents: int
+    count: int
+    by_source: list[IncomeSourceTotal]
+    days: list[IncomeDay]
 
 
 class CategoryTotal(BaseModel):

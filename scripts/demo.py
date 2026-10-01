@@ -44,6 +44,11 @@ def main() -> None:
         }
         today = date.today()
         first = today.replace(day=1)
+        fuentes = {"Sueldo": "Empresa (sueldo)", "Freelance": "Cliente QA remoto"}
+        samples_extra = [
+            ("income", 95000, "Freelance", "Landings", first + timedelta(days=3), "Cliente idiomas"),
+            ("income", 55000, "Freelance", "Ajustes web", first + timedelta(days=9), "Cliente idiomas"),
+        ]
         samples = [
             ("income", 850000, "Sueldo", "Sueldo mensual", first - timedelta(days=2)),
             ("expense", 125000, "Vivienda", "Alquiler", first + timedelta(days=5)),
@@ -80,8 +85,14 @@ def main() -> None:
         db.add_all(
             [
                 Transaction(user_id=user.id, type=t, amount_cents=money_to_cents(m),
-                            category_id=cats[c].id, description=d, date=f)
+                            category_id=cats[c].id, description=d, date=f,
+                            source=fuentes.get(c) if t == "income" else None)
                 for t, m, c, d, f in samples
+            ]
+            + [
+                Transaction(user_id=user.id, type=t, amount_cents=money_to_cents(m),
+                            category_id=cats[c].id, description=d, date=f, source=s)
+                for t, m, c, d, f, s in samples_extra
             ]
             # Aportes al fondo de emergencia: además de contar en el balance,
             # suman al progreso del objetivo.

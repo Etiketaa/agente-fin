@@ -98,6 +98,9 @@ class Transaction(Base):
     )
     # Hash de importación para deduplicación (fecha|monto|tipo|descripción normalizada).
     import_hash: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # Procedencia del ingreso (qué cliente o fuente pagó). Solo ingresos:
+    # permite responder "¿cuánto entró de cada lado este mes?".
+    source: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     category: Mapped[Category] = relationship()

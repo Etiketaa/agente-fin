@@ -29,6 +29,9 @@ from .schemas import (
     CategoryTotal,
     GoalCreate,
     GoalOut,
+    IncomeDay,
+    IncomeMonthOut,
+    IncomeSourceTotal,
     LoginRequest,
     RegisterRequest,
     SummaryOut,
@@ -99,6 +102,7 @@ def _to_out(t: Transaction) -> TransactionOut:
         description=t.description,
         date=t.date,
         goal=t.goal.name if t.goal else None,
+        source=t.source,
     )
 
 
@@ -525,6 +529,12 @@ def create_transaction(payload: TransactionCreate, user: User = Depends(get_curr
                 404, f"No existe el objetivo '{payload.goal}'. Disponibles: {disponibles or '(ninguno)'}"
             )
 
+    # La procedencia solo tiene sentido en ingresos: en un gasto el "quién"
+    # ya está en la descripción; en un ingreso es el dato que falta.
+    source = (payload.source or "").strip() or None
+    if payload.type != "income":
+        source = None
+
     t = Transaction(
         user_id=user.id,
         type=payload.type,
@@ -533,6 +543,7 @@ def create_transaction(payload: TransactionCreate, user: User = Depends(get_curr
         goal_id=goal.id if goal else None,
         description=payload.description.strip(),
         date=payload.date or date.today(),
+        source=source,
     )
     db.add(t)
     db.commit()
@@ -578,6 +589,66 @@ def list_transactions(
         q = q.where(Transaction.date <= h)
     rows = db.scalars(q.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limite)).all()
     return [_to_out(t) for t in rows]
+
+
+# ---------------------------------------------------------------------------
+# Ingresos del mes (vista para cobros por día)
+# ---------------------------------------------------------------------------
+
+@router.get("/income", response_model=IncomeMonthOut)
+def income_month(mes: Optional[str] = None, user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """Ingresos del mes: total, subtotal por procedencia y detalle por día."""
+    try:
+        rows = analytics.income_rows(db, user.id, mes)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    month = analytics.month_bounds(mes)[0].strftime("%Y-%m")
+    by_source_map: dict[str, dict] = {}
+    by_day_map: dict[str, dict] = {}
+    for r in rows:
+        b = by_source_map.setdefault(r.source, {"total": 0, "count": 0})
+        b["total"] += r.amount_cents
+        b["count"] += 1
+        d = by_day_map.setdefault(r.date.isoformat(), {"total": 0, "items": []})
+        d["total"] += r.amount_cents
+        d["items"].append(r)
+
+    by_source = [
+        IncomeSourceTotal(
+            source=name,
+            total=cents_to_money(v["total"]),
+            total_cents=v["total"],
+            count=v["count"],
+        )
+        for name, v in sorted(by_source_map.items(), key=lambda kv: -kv[1]["total"])
+    ]
+    days = [
+        IncomeDay(
+            date=date.fromisoformat(dia),
+            total=cents_to_money(v["total"]),
+            total_cents=v["total"],
+            items=[
+                TransactionOut(
+                    id=r.id, type="income", amount=cents_to_money(r.amount_cents),
+                    amount_cents=r.amount_cents, category=r.category,
+                    description=r.description, date=r.date, goal=None, source=r.source,
+                )
+                for r in v["items"]
+            ],
+        )
+        for dia, v in sorted(by_day_map.items())
+    ]
+    total_cents = sum(r.amount_cents for r in rows)
+    return IncomeMonthOut(
+        month=month,
+        total=cents_to_money(total_cents),
+        total_cents=total_cents,
+        count=len(rows),
+        by_source=by_source,
+        days=days,
+    )
 
 
 @router.delete("/transactions/{tid}", status_code=204)
