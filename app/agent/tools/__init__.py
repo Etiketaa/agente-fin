@@ -109,8 +109,9 @@ def summarize_action(name: str, args: dict) -> str:
         return f"Eliminar la transacción #{args.get('id')}"
 
     if name == "crear_objetivo":
+        tipo = "recaudación" if str(args.get("tipo", "")).lower() == "recaudacion" else "objetivo de ahorro"
         texto = (
-            f"Crear el objetivo de ahorro «{args.get('nombre')}» "
+            f"Crear la {tipo} «{args.get('nombre')}» "
             f"por {fmt_amount(args.get('monto'))}"
         )
         if args.get("fecha_limite"):

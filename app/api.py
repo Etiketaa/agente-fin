@@ -110,6 +110,7 @@ def _goal_out(row: analytics.GoalRow) -> GoalOut:
     return GoalOut(
         id=row.id,
         name=row.name,
+        kind=row.kind,
         target_amount=cents_to_money(row.target_cents),
         target_amount_cents=row.target_cents,
         saved=cents_to_money(row.saved_cents),
@@ -296,6 +297,7 @@ def create_goal(payload: GoalCreate, user: User = Depends(get_current_user),
         name=nombre,
         target_cents=money_to_cents(payload.target_amount),
         target_date=payload.target_date,
+        kind=payload.kind,
         notes=payload.notes.strip(),
     )
     db.add(goal)

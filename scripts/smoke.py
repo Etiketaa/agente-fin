@@ -292,6 +292,24 @@ def _run(c: Cleanup):
     c.goals.remove(g["id"])
     expect_error("objetivo inexistente", lambda: req("DELETE", f"/api/goals/{g['id']}"), 404)
 
+    print("\n[objetivos — recaudación]")
+    rec = req("POST", "/api/goals", {
+        "name": "Colecta smoke", "target_amount": 100000, "kind": "recaudacion"})
+    c.goals.append(rec["id"])
+    check("crea recaudación con su kind", rec["kind"] == "recaudacion")
+    i = req("POST", "/api/transactions", {
+        "type": "income", "amount": 30000, "category": "Freelance",
+        "goal": "Colecta smoke", "source": "Amigos"})
+    c.txs.append(i["id"])
+    e = req("POST", "/api/transactions", {
+        "type": "expense", "amount": 12000, "category": "Otros",
+        "goal": "Colecta smoke", "description": "compras del evento"})
+    c.txs.append(e["id"])
+    row = next(x for x in req("GET", "/api/goals") if x["id"] == rec["id"])
+    check("recaudación: progreso = ingresos − gastos asignados",
+          row["saved_cents"] == i["amount_cents"] - e["amount_cents"])
+    check("cuenta ambos movimientos", row["contributions"] == 2)
+
     # ----------------------------------------------------------- presupuestos
     print("\n[presupuestos mensuales]")
     b = req("POST", "/api/budgets", {"category": "Ocio", "amount": 50000})

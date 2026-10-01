@@ -176,6 +176,7 @@ tr:hover td { background: #f8fafc; }
 .tag.income { background: #dcfce7; color: #166534; }
 .tag.expense { background: #fee2e2; color: #991b1b; }
 .tag.goal { background: #ede9fe; color: #5b21b6; font-weight: 600; }
+.tag.goal-kind { background: #f1f5f9; color: var(--muted); text-transform: none; font-weight: 500; }
 .tag.source { background: #ecfdf5; color: #065f46; font-weight: 600; text-transform: none; }
 
 /* ---------- Ingresos del mes ---------- */

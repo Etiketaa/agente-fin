@@ -111,9 +111,10 @@
                 <input type="date" id="tx-date" name="date" />
               </label>
             </div>
-            <label>Ahorro
+            <!-- Aparece la lista de TODOS los objetivos (ahorro y recaudación) -->
+            <label>Objetivo / recaudación
               <select id="tx-goal" name="goal">
-                <option value="">— sin objetivo —</option>
+                <option value="">— ninguno —</option>
               </select>
             </label>
             <!-- Solo visible cuando el tipo es Ingreso: de dónde vino la plata -->
@@ -203,13 +204,21 @@
         <div class="card-head">
           <h2>Objetivos de ahorro</h2>
           <p class="muted small">
-            El progreso se calcula de los movimientos que asignás a cada objetivo.
-            Cargá el aporte como un gasto normal eligiendo el objetivo en «Registrar movimiento».
+            El progreso sale de los movimientos que asignás a cada objetivo.
+            En una <strong>recaudación</strong> los ingresos suman a la bolsa y los
+            gastos asignados restan: queda trazado a dónde fue la plata.
+            Asignalos desde «Registrar movimiento» → «Objetivo / recaudación».
           </p>
         </div>
         <form id="goal-form" class="inline-form">
           <label>Nombre
             <input type="text" id="goal-name" required maxlength="80" placeholder="Fondo de emergencia" />
+          </label>
+          <label>Tipo
+            <select id="goal-kind">
+              <option value="ahorro">🎯 Ahorro (plata tuya que separás)</option>
+              <option value="recaudacion">🧺 Recaudación (plata de otros, con destino trazable)</option>
+            </select>
           </label>
           <label>Monto a juntar
             <input type="number" id="goal-amount" step="0.01" min="0.01" required placeholder="1.200.000" />

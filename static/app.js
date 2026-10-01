@@ -328,11 +328,13 @@ async function loadGoals() {
   // El selector del formulario de movimiento
   const select = $("#tx-goal");
   const prev = select.value;
-  select.innerHTML = `<option value="">— sin objetivo —</option>`;
+  select.innerHTML = `<option value="">— ninguno —</option>`;
   for (const g of state.goals) {
     const opt = document.createElement("option");
     opt.value = g.name;
-    opt.textContent = g.name;
+    // Icono según el tipo, para no confundir plata tuya con plata recaudada.
+    opt.textContent = (g.kind === "recaudacion" ? "🧺 " : "🎯 ") + g.name;
+    if (g.kind === "recaudacion") opt.title = "Al asignar: ingresos suman, gastos restan";
     select.appendChild(opt);
   }
   if ([...select.options].some((o) => o.value === prev)) select.value = prev;
@@ -359,10 +361,13 @@ function renderGoals() {
       ? `<div class="goal-extra">${parts.map(esc).join(" · ")}</div>`
       : "";
     const fecha = g.target_date ? esc(g.target_date) : "sin fecha límite";
+    const badge = g.kind === "recaudacion"
+      ? ` <span class="tag goal-kind">🧺 recaudación</span>`
+      : ` <span class="tag goal-kind">🎯 ahorro</span>`;
     el.innerHTML = `
       <div class="goal-head">
         <div>
-          <div class="goal-name">${esc(g.name)}</div>
+          <div class="goal-name">${esc(g.name)}${badge}</div>
           <div class="muted small">${fecha}${g.notes ? ` · ${esc(g.notes)}` : ""}</div>
         </div>
         <button class="btn ghost small-btn" data-del-goal="${g.id}" title="Eliminar objetivo">✕</button>
@@ -398,6 +403,7 @@ async function onSubmitGoal(e) {
     name: $("#goal-name").value.trim(),
     target_amount: parseFloat($("#goal-amount").value),
     target_date: $("#goal-date").value || null,
+    kind: $("#goal-kind").value,
   };
   setBusy(btn, true);
   try {

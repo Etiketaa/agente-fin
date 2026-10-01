@@ -17,7 +17,9 @@ from .base import fmt, money_to_cents, parse_date
 
 
 def _row_line(row: analytics.GoalRow) -> str:
-    parts = [f"{row.name}: {fmt(row.saved_cents)} de {fmt(row.target_cents)} ({row.percent:.0f}%)"]
+    icono = "🎯" if row.kind == analytics.AHORRO else "🧺"
+    tipo = "ahorro" if row.kind == analytics.AHORRO else "recaudación"
+    parts = [f"{icono} {row.name} ({tipo}): {fmt(row.saved_cents)} de {fmt(row.target_cents)} ({row.percent:.0f}%)"]
     if row.status == analytics.ALCANZADO:
         parts.append("¡objetivo alcanzado! 🎉")
     else:
@@ -63,6 +65,13 @@ def crear_objetivo(db: Session, args: dict, user_id: int) -> str:
     if monto <= 0:
         raise ValueError("El monto objetivo debe ser mayor a cero.")
 
+    tipo = str(args.get("tipo", "ahorro")).strip().lower() or "ahorro"
+    if tipo not in (analytics.AHORRO, analytics.RECAUDACION):
+        raise ValueError(
+            "El tipo debe ser 'ahorro' (plata que separás para vos) o "
+            "'recaudacion' (plata que entra de otros y tiene destino trazable)."
+        )
+
     fecha = parse_date(args.get("fecha_limite"))
     if fecha and fecha < date.today():
         raise ValueError(f"La fecha límite {fecha.isoformat()} ya pasó.")
@@ -72,12 +81,18 @@ def crear_objetivo(db: Session, args: dict, user_id: int) -> str:
         name=nombre,
         target_cents=money_to_cents(monto),
         target_date=fecha,
+        kind=tipo,
         notes=str(args.get("notas", "")).strip(),
     )
     db.add(goal)
     db.commit()
     db.refresh(goal)
     cierre = f", con fecha límite {fecha.isoformat()}" if fecha else ", sin fecha límite"
+    if tipo == analytics.RECAUDACION:
+        return (
+            f"Recaudación #{goal.id} «{goal.name}» creada: meta {fmt(goal.target_cents)}{cierre}. "
+            "Los ingresos que le asignes suman y los gastos restan (así se ve a dónde fue la plata)."
+        )
     return f"Objetivo #{goal.id} «{goal.name}» creado: meta {fmt(goal.target_cents)}{cierre}."
 
 
@@ -114,12 +129,17 @@ SCHEMAS = [
         "type": "function",
         "function": {
             "name": "crear_objetivo",
-            "description": "Crea un objetivo de ahorro (meta de dinero a juntar, con fecha límite opcional).",
+            "description": (
+                "Crea un objetivo de ahorro (plata que separás para vos) o una "
+                "recaudación (plata que entra de otros, con destino trazable), "
+                "con fecha límite opcional."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "nombre": {"type": "string", "description": "Nombre corto del objetivo (ej: 'Fondo de emergencia')"},
+                    "nombre": {"type": "string", "description": "Nombre corto del objetivo (ej: 'Fondo de emergencia', 'Juntada con amigos')"},
                     "monto": {"type": "number", "description": "Monto a juntar, en la moneda local (ARS)"},
+                    "tipo": {"type": "string", "description": "'ahorro' (default) o 'recaudacion'"},
                     "fecha_limite": {"type": "string", "description": "Fecha YYYY-MM-DD para completarlo (opcional)"},
                     "notas": {"type": "string", "description": "Nota opcional"},
                 },

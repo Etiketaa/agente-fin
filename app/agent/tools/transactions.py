@@ -264,7 +264,7 @@ SCHEMAS = [
                     "categoria": {"type": "string", "description": "Nombre exacto de la categoría (usá listar_categorias si dudás)"},
                     "descripcion": {"type": "string", "description": "Descripción corta (opcional)"},
                     "fecha": {"type": "string", "description": "Fecha YYYY-MM-DD (opcional, por defecto hoy)"},
-                    "objetivo": {"type": "string", "description": "Nombre exacto del objetivo de ahorro al que se asigna (opcional)"},
+                    "objetivo": {"type": "string", "description": "Nombre exacto del objetivo de ahorro al que se asigna (opcional). Si es una recaudación: los ingresos asignados suman a la bolsa y los gastos restan."},
                     "fuente": {"type": "string", "description": "Procedencia del ingreso: quién pagó (cliente, empresa). Solo para tipo=income."},
                 },
                 "required": ["tipo", "monto", "categoria"],

@@ -84,12 +84,14 @@ class GoalCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     target_amount: float = Field(gt=0, description="Monto a juntar, en unidades de moneda")
     target_date: Date | None = None
+    kind: Literal["ahorro", "recaudacion"] = "ahorro"
     notes: str = ""
 
 
 class GoalOut(BaseModel):
     id: int
     name: str
+    kind: str  # "ahorro" | "recaudacion"
     target_amount: float
     target_amount_cents: int
     saved: float

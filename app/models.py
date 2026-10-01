@@ -113,6 +113,11 @@ class SavingsGoal(Base):
 
     No tiene columna de "saldo": el progreso se deriva de los movimientos con
     `goal_id`. Un único libro contable, sin contador que pueda desincronizarse.
+
+    `kind` cambia cómo se calcula el progreso:
+    - ahorro: suma de TODOS los movimientos asignados (cada aporte suma).
+    - recaudacion: ingresos − gastos asignados (plata que entró menos lo que
+      ya se usó de esa bolsa). El dinero recaudado tiene un destino trazable.
     """
 
     __tablename__ = "savings_goals"
@@ -125,6 +130,7 @@ class SavingsGoal(Base):
     name: Mapped[str] = mapped_column(String(80))
     target_cents: Mapped[int] = mapped_column(Integer)
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    kind: Mapped[str] = mapped_column(String(15), default="ahorro")  # ahorro | recaudacion
     notes: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
