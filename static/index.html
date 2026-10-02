@@ -76,6 +76,20 @@
         <div class="card summary hero">
           <div class="card-label">Balance</div>
           <div class="card-value" id="sum-balance">—</div>
+          <div class="qa-row" id="qa-row">
+            <button class="qa" data-action="cobro" type="button">
+              <span class="qa-icon">💵</span><span>Registrar cobro</span>
+            </button>
+            <button class="qa" data-action="gasto" type="button">
+              <span class="qa-icon">💸</span><span>Registrar gasto</span>
+            </button>
+            <button class="qa" data-action="pagar" type="button">
+              <span class="qa-icon">🗓</span><span>Pagar vencimiento</span>
+            </button>
+            <button class="qa" data-action="consulta" type="button">
+              <span class="qa-icon">🤖</span><span>¿Cómo voy?</span>
+            </button>
+          </div>
         </div>
         <div class="card summary income">
           <div class="card-label">Ingresos</div>
@@ -183,21 +197,7 @@
 
       <div class="card">
         <h2>Movimientos</h2>
-        <div class="table-wrap">
-          <table id="tx-table">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Categoría</th>
-                <th>Descripción</th>
-                <th>Tipo</th>
-                <th class="num">Monto</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="tx-tbody"></tbody>
-          </table>
-        </div>
+        <div id="tx-feed" class="tx-feed"></div>
       </div>
     </section>
 

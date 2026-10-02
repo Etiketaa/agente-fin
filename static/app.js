@@ -205,36 +205,80 @@ async function renderSummary() {
   }
 }
 
+// Iconos por categoría (más escaneables que texto en un feed de app).
+const CAT_ICON = {
+  Comida: "🛒", Transporte: "🚌", Vivienda: "🏠", Servicios: "💡",
+  Salud: "🏥", "Educación": "📚", Ocio: "🎮", Motos: "🏍️",
+  Compras: "🛍️", Otros: "📦", Sueldo: "💼", Freelance: "💻",
+  "Otros ingresos": "💸",
+};
+
+function dayLabel(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const diff = Math.round((hoy - date) / 86400000);
+  if (diff === 0) return "Hoy";
+  if (diff === 1) return "Ayer";
+  return date.toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" });
+}
+
 async function renderTransactions() {
   const range = periodRange();
-  const qs = new URLSearchParams({ ...range, limite: "30" }).toString();
+  const qs = new URLSearchParams({ ...range, limite: "40" }).toString();
   const rows = await api(`/api/transactions?${qs}`);
-  const tbody = $("#tx-tbody");
+  const feed = $("#tx-feed");
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="muted">Sin movimientos en este período.</td></tr>`;
+    feed.innerHTML = `<div class="no-data">Sin movimientos en este período.</div>`;
     return;
   }
-  tbody.innerHTML = "";
+  // Agrupar por día (la API ya viene ordenada desc).
+  const groups = new Map();
   for (const t of rows) {
-    const tr = document.createElement("tr");
-    const isIncome = t.type === "income";
-    const goal = t.goal ? `<span class="tag goal" title="Aporte a un objetivo">🎯 ${esc(t.goal)}</span>` : "";
-    const fuente = t.source ? `<span class="tag source" title="Procedencia">💵 ${esc(t.source)}</span>` : "";
-    tr.innerHTML = `
-      <td>${esc(t.date)}</td>
-      <td>${esc(t.category)}</td>
-      <td>${esc(t.description || "—")} ${fuente} ${goal}</td>
-      <td><span class="tag ${t.type}">${isIncome ? "Ingreso" : "Gasto"}</span></td>
-      <td class="num ${isIncome ? "pos" : "neg"}">${moneyFmt(t.amount)}</td>
-      <td><button class="btn ghost small-btn" data-del="${t.id}" title="Eliminar">✕</button></td>`;
-    tbody.appendChild(tr);
+    if (!groups.has(t.date)) groups.set(t.date, []);
+    groups.get(t.date).push(t);
   }
-  tbody.querySelectorAll("[data-del]").forEach((btn) => {
+  feed.innerHTML = "";
+  for (const [dia, items] of groups) {
+    const g = document.createElement("div");
+    g.className = "feed-day";
+    const total = items.reduce((acc, t) => acc + (t.type === "income" ? t.amount : -t.amount), 0);
+    const totalCls = total >= 0 ? "pos" : "neg";
+    const totalSign = total >= 0 ? "+" : "−";
+    g.innerHTML = `
+      <div class="feed-day-head">
+        <span>${esc(dayLabel(dia))}</span>
+        <span class="num ${totalCls}">${totalSign}${moneyFmt(Math.abs(total))}</span>
+      </div>
+      <div class="feed-items"></div>`;
+    const list = g.querySelector(".feed-items");
+    for (const t of items) {
+      const isIncome = t.type === "income";
+      const icon = CAT_ICON[t.category] || (isIncome ? "💸" : "📦");
+      const chips = [
+        t.source ? `<span class="tag source">💵 ${esc(t.source)}</span>` : "",
+        t.goal ? `<span class="tag goal">🎯 ${esc(t.goal)}</span>` : "",
+      ].filter(Boolean).join(" ");
+      const item = document.createElement("div");
+      item.className = "feed-item";
+      item.innerHTML = `
+        <span class="feed-icon">${icon}</span>
+        <span class="feed-main">
+          <span class="feed-desc">${esc(t.description || t.category)}</span>
+          <span class="feed-sub muted small">${esc(t.category)}${chips ? " · " : ""}${chips}</span>
+        </span>
+        <span class="feed-amt num ${isIncome ? "pos" : "neg"}">${isIncome ? "+" : "−"}${moneyFmt(t.amount)}</span>
+        <button class="btn ghost small-btn feed-del" data-del="${t.id}" title="Eliminar">✕</button>`;
+      list.appendChild(item);
+    }
+    feed.appendChild(g);
+  }
+  feed.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm(`¿Eliminar la transacción #${btn.dataset.del}?`)) return;
+      if (!confirm(`¿Eliminar el movimiento #${btn.dataset.del}?`)) return;
       try {
         await api(`/api/transactions/${btn.dataset.del}`, { method: "DELETE" });
-        toast("Transacción eliminada", "success");
+        toast("Movimiento eliminado", "success");
         await refreshPanel();
       } catch (e) {
         toast(e.message, "error");
@@ -828,6 +872,53 @@ function initAuthTabs() {
 }
 
 // ---------------------------------------------------------------------------
+// Quick actions del Panel (el gesto frecuente vive junto al balance)
+// ---------------------------------------------------------------------------
+
+function jumpToForm(type) {
+  $("#tx-type").value = type;
+  syncCategoryOptions();
+  const form = $("#tx-form");
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+  const monto = $("#tx-amount");
+  monto.focus();
+  // Señal para que se note qué quedó activo
+  form.closest(".card").classList.remove("flash");
+  void form.closest(".card").offsetWidth; // retrigger
+  form.closest(".card").classList.add("flash");
+}
+
+function jumpToBills() {
+  const card = $("#bill-form").closest(".card");
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  card.classList.remove("flash");
+  void card.offsetWidth;
+  card.classList.add("flash");
+}
+
+function jumpToChat() {
+  $$(".tab").forEach((b) => b.classList.toggle("active", b.dataset.view === "agent"));
+  $$("main section").forEach((sec) => {
+    sec.classList.toggle("hidden", sec.id !== "view-agent");
+  });
+  const input = $("#chat-input");
+  input.value = "¿cómo vengo este mes?";
+  input.focus();
+}
+
+function initQuickActions() {
+  $("#qa-row").addEventListener("click", (e) => {
+    const btn = e.target.closest(".qa");
+    if (!btn) return;
+    const acc = btn.dataset.action;
+    if (acc === "cobro") jumpToForm("income");
+    else if (acc === "gasto") jumpToForm("expense");
+    else if (acc === "pagar") jumpToBills();
+    else if (acc === "consulta") jumpToChat();
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
 
@@ -850,6 +941,7 @@ function initTabs() {
 async function init() {
   initTabs();
   initAuthTabs();
+  initQuickActions();
   $("#auth-form").addEventListener("submit", onSubmitAuth);
   $("#logout-btn").addEventListener("click", onLogout);
   // Los listeners se bindean siempre: el login posterior los necesita.
