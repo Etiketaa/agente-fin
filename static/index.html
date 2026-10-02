@@ -93,46 +93,6 @@
 
       <div class="grid">
         <div class="card">
-          <h2>Registrar movimiento</h2>
-          <form id="tx-form" class="tx-form">
-            <div class="form-row">
-              <label>Tipo
-                <select id="tx-type" name="type">
-                  <option value="expense">Gasto</option>
-                  <option value="income">Ingreso</option>
-                </select>
-              </label>
-              <label>Monto
-                <input type="number" id="tx-amount" name="amount" step="0.01" min="0.01" required placeholder="0,00" />
-              </label>
-            </div>
-            <div class="form-row">
-              <label>Categoría
-                <select id="tx-category" name="category" required></select>
-              </label>
-              <label>Fecha
-                <input type="date" id="tx-date" name="date" />
-              </label>
-            </div>
-            <!-- Aparece la lista de TODOS los objetivos (ahorro y recaudación) -->
-            <label>Objetivo / recaudación
-              <select id="tx-goal" name="goal">
-                <option value="">— ninguno —</option>
-              </select>
-            </label>
-            <!-- Solo visible cuando el tipo es Ingreso: de dónde vino la plata -->
-            <label id="tx-source-wrap" class="hidden">Procedencia
-              <input type="text" id="tx-source" name="source" maxlength="80"
-                     placeholder="Cliente X, Empresa Y, Mercado Pago..." />
-            </label>
-            <label>Descripción
-              <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
-            </label>
-            <button type="submit" class="btn primary">Registrar</button>
-          </form>
-        </div>
-
-        <div class="card">
           <h2>Gastos por categoría</h2>
           <div id="category-bars"></div>
         </div>
@@ -151,33 +111,17 @@
 
       <div class="card">
         <div class="card-head">
-          <h2>Vencimientos</h2>
-          <p class="muted small">
-            Pagos futuros con fecha (tarjeta, alquiler, seguro...). Al pagar se
-            genera el gasto y, si es mensual, se crea el siguiente automáticamente.
-          </p>
+          <div class="goal-head">
+            <div>
+              <h2>Vencimientos</h2>
+              <p class="muted small">
+                Pagos futuros con fecha (tarjeta, alquiler, seguro...). Al pagar se
+                genera el gasto y, si es mensual, se crea el siguiente automáticamente.
+              </p>
+            </div>
+            <button class="btn primary small-btn" id="btn-nuevo-bill" type="button">+ Agregar</button>
+          </div>
         </div>
-        <form id="bill-form" class="inline-form">
-          <label>Descripción
-            <input type="text" id="bill-desc" required maxlength="200" placeholder="Tarjeta Visa" />
-          </label>
-          <label>Monto
-            <input type="number" id="bill-amount" step="0.01" min="0.01" required placeholder="150.000" />
-          </label>
-          <label>Vence
-            <input type="date" id="bill-date" required />
-          </label>
-          <label>Categoría
-            <select id="bill-category" required></select>
-          </label>
-          <label>Repite
-            <select id="bill-recurrence">
-              <option value="once">Una vez</option>
-              <option value="monthly">Todos los meses</option>
-            </select>
-          </label>
-          <button type="submit" class="btn primary">Agregar</button>
-        </form>
         <div id="bills-list" class="bill-list"></div>
       </div>
 
@@ -273,6 +217,83 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Bottom sheets: los formularios viven acá, nunca siempre visibles en la página.
+       Los abre el FAB (y el botón de agregar dentro de Vencimientos). -->
+  <div class="sheet-backdrop hidden" id="sheet-backdrop"></div>
+
+  <div class="sheet hidden" id="sheet-movimiento" role="dialog" aria-label="Registrar movimiento">
+    <div class="sheet-head">
+      <div class="sheet-title" id="sheet-movimiento-title">Registrar movimiento</div>
+      <button class="btn ghost small-btn" data-close-sheet type="button">✕ Cerrar</button>
+    </div>
+    <form id="tx-form" class="tx-form">
+      <div class="form-row">
+        <label>Tipo
+          <select id="tx-type" name="type">
+            <option value="expense">Gasto</option>
+            <option value="income">Ingreso</option>
+          </select>
+        </label>
+        <label>Monto
+          <input type="number" id="tx-amount" name="amount" step="0.01" min="0.01" required placeholder="0,00" />
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Categoría
+          <select id="tx-category" name="category" required></select>
+        </label>
+        <label>Fecha
+          <input type="date" id="tx-date" name="date" />
+        </label>
+      </div>
+      <label>Objetivo / recaudación
+        <select id="tx-goal" name="goal">
+          <option value="">— ninguno —</option>
+        </select>
+      </label>
+      <label id="tx-source-wrap" class="hidden">Procedencia
+        <input type="text" id="tx-source" name="source" maxlength="80"
+               placeholder="Cliente X, Empresa Y, Mercado Pago..." />
+      </label>
+      <label>Descripción
+        <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
+      </label>
+      <button type="submit" class="btn primary">Registrar</button>
+    </form>
+  </div>
+
+  <div class="sheet hidden" id="sheet-bill" role="dialog" aria-label="Nuevo vencimiento">
+    <div class="sheet-head">
+      <div class="sheet-title">Nuevo vencimiento</div>
+      <button class="btn ghost small-btn" data-close-sheet type="button">✕ Cerrar</button>
+    </div>
+    <form id="bill-form" class="tx-form">
+      <label>Descripción
+        <input type="text" id="bill-desc" required maxlength="200" placeholder="Tarjeta Visa" />
+      </label>
+      <div class="form-row">
+        <label>Monto
+          <input type="number" id="bill-amount" step="0.01" min="0.01" required placeholder="150.000" />
+        </label>
+        <label>Vence
+          <input type="date" id="bill-date" required />
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Categoría
+          <select id="bill-category" required></select>
+        </label>
+        <label>Repite
+          <select id="bill-recurrence">
+            <option value="once">Una vez</option>
+            <option value="monthly">Todos los meses</option>
+          </select>
+        </label>
+      </div>
+      <button type="submit" class="btn primary">Guardar vencimiento</button>
+    </form>
+  </div>
 
   <!-- Acción flotante: el gesto más común vive a un tap, en cualquier pestaña -->
   <div class="fab-wrap" id="fab-wrap">

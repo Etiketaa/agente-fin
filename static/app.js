@@ -641,6 +641,7 @@ async function onSubmitBill(e) {
     await api("/api/bills", { method: "POST", body: JSON.stringify(payload) });
     toast("Vencimiento agregado", "success");
     e.target.reset();
+    closeSheets();
     await refreshPanel();
   } catch (err) {
     toast(err.message, "error");
@@ -673,6 +674,7 @@ async function onSubmitTx(e) {
     await api("/api/transactions", { method: "POST", body: JSON.stringify(payload) });
     toast("Movimiento registrado", "success");
     e.target.reset();
+    closeSheets();
     syncCategoryOptions();
     $("#tx-date").value = new Date().toISOString().slice(0, 10);
     await refreshPanel();
@@ -804,12 +806,14 @@ function showAuth() {
   $("#auth-screen").classList.remove("hidden");
   $("#main-container").classList.add("hidden");
   $("#user-box").classList.add("hidden");
+  $("#fab-wrap").classList.add("hidden");
 }
 
 function enterApp(username) {
   $("#auth-screen").classList.add("hidden");
   $("#main-container").classList.remove("hidden");
   $("#user-box").classList.remove("hidden");
+  $("#fab-wrap").classList.remove("hidden");
   $("#user-name").textContent = username || localStorage.getItem(USER_KEY) || "";
 }
 
@@ -876,28 +880,18 @@ function initAuthTabs() {
 // ---------------------------------------------------------------------------
 
 function jumpToForm(type) {
-  // Si no estoy en el Panel, cambio primero y después lleva al formulario.
-  const panelBtn = document.querySelector('.tab[data-view="panel"]');
-  if (panelBtn && !panelBtn.classList.contains("active")) panelBtn.click();
+  // FAB cobro/gasto: abre la bottom sheet del formulario directo.
+  openSheet("#sheet-movimiento");
   $("#tx-type").value = type;
   syncCategoryOptions();
-  const form = $("#tx-form");
-  form.scrollIntoView({ behavior: "smooth", block: "start" });
-  $("#tx-amount").focus();
-  const card = form.closest(".card");
-  card.classList.remove("flash");
-  void card.offsetWidth; // retrigger
-  card.classList.add("flash");
+  const title = $("#sheet-movimiento-title");
+  if (title) title.textContent = type === "income" ? "Registrar cobro" : "Registrar gasto";
+  setTimeout(() => $("#tx-amount").focus(), 120);
 }
 
 function jumpToBills() {
-  const panelBtn = document.querySelector('.tab[data-view="panel"]');
-  if (panelBtn && !panelBtn.classList.contains("active")) panelBtn.click();
-  const card = $("#bill-form").closest(".card");
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
-  card.classList.remove("flash");
-  void card.offsetWidth;
-  card.classList.add("flash");
+  openSheet("#sheet-bill");
+  setTimeout(() => $("#bill-desc").focus(), 120);
 }
 
 function jumpToChat() {
@@ -905,6 +899,29 @@ function jumpToChat() {
   const input = $("#chat-input");
   input.value = "¿cómo vengo este mes?";
   input.focus();
+}
+
+// Bottom sheets: un solo backdrop para los dos formularios de escritura.
+function openSheet(sel) {
+  closeSheets();
+  $("#sheet-backdrop").classList.remove("hidden");
+  $(sel).classList.remove("hidden");
+  $(sel).classList.add("anim-in");
+}
+
+function closeSheets() {
+  $("#sheet-backdrop").classList.add("hidden");
+  $$(".sheet").forEach((s) => {
+    s.classList.add("hidden");
+    s.classList.remove("anim-in");
+  });
+}
+
+function initSheets() {
+  $("#sheet-backdrop").addEventListener("click", closeSheets);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheets(); });
+  $$("[data-close-sheet]").forEach((b) => b.addEventListener("click", closeSheets));
+  $("#btn-nuevo-bill").addEventListener("click", () => jumpToBills());
 }
 
 function initFab() {
@@ -963,6 +980,7 @@ async function init() {
   initTabs();
   initAuthTabs();
   initFab();
+  initSheets();
   $("#auth-form").addEventListener("submit", onSubmitAuth);
   $("#logout-btn").addEventListener("click", onLogout);
   // Los listeners se bindean siempre: el login posterior los necesita.

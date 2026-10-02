@@ -119,6 +119,15 @@ body {
   flex-direction: column;
   gap: 20px;
 }
+/* Cada vista es una columna: secciones/órdenes con aire entre bloques. */
+.container > section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+@media (min-width: 720px) {
+  .container > section { gap: 24px; }
+}
 .hidden { display: none !important; }
 .muted { color: var(--muted); font-size: 0.85rem; }
 .small { font-size: 0.8rem; }
@@ -137,10 +146,12 @@ code { background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 6px;
   * { animation: none !important; transition: none !important; }
 }
 
+/* Toolbar del Panel: respira respecto a las alertas y al hero */
 .toolbar {
   display: flex;
   align-items: center;
   gap: 14px;
+  margin-bottom: 4px;
 }
 .period-label { font-size: 0.88rem; color: var(--muted); display: flex; align-items: center; gap: 8px; font-weight: 600; }
 
@@ -482,6 +493,63 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .pending-card .pending-summary { font-size: 0.92rem; margin-bottom: 12px; font-weight: 600; }
 .pending-actions { display: flex; gap: 10px; }
 .btn.confirm { background: var(--amber); color: #3a2703; }
+
+/* ---------- Bottom sheets (los formularios nunca quedan siempre visibles) ---------- */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 9, 0.66);
+  backdrop-filter: blur(2px);
+  z-index: 70;
+}
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  padding: 14px var(--space) calc(20px + env(safe-area-inset-bottom));
+  max-height: 88vh;
+  overflow-y: auto;
+}
+/* centrado en escritorio para que no quede una barra gigante */
+@media (min-width: 720px) {
+  .sheet {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: min(480px, 100% - 32px);
+    bottom: 24px;
+    border-bottom: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+  }
+}
+.sheet.anim-in { animation: sheetup 0.28s var(--ease) both; }
+@keyframes sheetup {
+  from { transform: translateY(18px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (min-width: 720px) {
+  .sheet.anim-in { animation-name: sheetup-desktop; }
+  @keyframes sheetup-desktop {
+    from { transform: translate(-50%, 18px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+  }
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.sheet-title { font-size: 1rem; font-weight: 800; letter-spacing: -0.01em; }
 
 /* ---------- FAB (acción flotante, disponible en todas las pestañas) ---------- */
 .fab-wrap {
