@@ -872,23 +872,27 @@ function initAuthTabs() {
 }
 
 // ---------------------------------------------------------------------------
-// Quick actions del Panel (el gesto frecuente vive junto al balance)
+// FAB: el gesto frecuente flota siempre abajo a la derecha, en todas las tabs
 // ---------------------------------------------------------------------------
 
 function jumpToForm(type) {
+  // Si no estoy en el Panel, cambio primero y después lleva al formulario.
+  const panelBtn = document.querySelector('.tab[data-view="panel"]');
+  if (panelBtn && !panelBtn.classList.contains("active")) panelBtn.click();
   $("#tx-type").value = type;
   syncCategoryOptions();
   const form = $("#tx-form");
   form.scrollIntoView({ behavior: "smooth", block: "start" });
-  const monto = $("#tx-amount");
-  monto.focus();
-  // Señal para que se note qué quedó activo
-  form.closest(".card").classList.remove("flash");
-  void form.closest(".card").offsetWidth; // retrigger
-  form.closest(".card").classList.add("flash");
+  $("#tx-amount").focus();
+  const card = form.closest(".card");
+  card.classList.remove("flash");
+  void card.offsetWidth; // retrigger
+  card.classList.add("flash");
 }
 
 function jumpToBills() {
+  const panelBtn = document.querySelector('.tab[data-view="panel"]');
+  if (panelBtn && !panelBtn.classList.contains("active")) panelBtn.click();
   const card = $("#bill-form").closest(".card");
   card.scrollIntoView({ behavior: "smooth", block: "start" });
   card.classList.remove("flash");
@@ -897,19 +901,36 @@ function jumpToBills() {
 }
 
 function jumpToChat() {
-  $$(".tab").forEach((b) => b.classList.toggle("active", b.dataset.view === "agent"));
-  $$("main section").forEach((sec) => {
-    sec.classList.toggle("hidden", sec.id !== "view-agent");
-  });
+  document.querySelector('.tab[data-view="agent"]').click();
   const input = $("#chat-input");
   input.value = "¿cómo vengo este mes?";
   input.focus();
 }
 
-function initQuickActions() {
-  $("#qa-row").addEventListener("click", (e) => {
-    const btn = e.target.closest(".qa");
+function initFab() {
+  const wrap = $("#fab-wrap");
+  const fab = $("#fab");
+  const sheet = $("#fab-sheet");
+  const close = () => {
+    sheet.classList.add("hidden");
+    fab.classList.remove("open");
+    fab.setAttribute("aria-expanded", "false");
+  };
+  fab.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = !sheet.classList.contains("hidden");
+    if (open) return close();
+    sheet.classList.remove("hidden");
+    fab.classList.add("open");
+    fab.setAttribute("aria-expanded", "true");
+  });
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target)) close();
+  });
+  sheet.addEventListener("click", (e) => {
+    const btn = e.target.closest(".fab-row");
     if (!btn) return;
+    close();
     const acc = btn.dataset.action;
     if (acc === "cobro") jumpToForm("income");
     else if (acc === "gasto") jumpToForm("expense");
@@ -941,7 +962,7 @@ function initTabs() {
 async function init() {
   initTabs();
   initAuthTabs();
-  initQuickActions();
+  initFab();
   $("#auth-form").addEventListener("submit", onSubmitAuth);
   $("#logout-btn").addEventListener("click", onLogout);
   // Los listeners se bindean siempre: el login posterior los necesita.

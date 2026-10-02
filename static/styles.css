@@ -483,6 +483,79 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .pending-actions { display: flex; gap: 10px; }
 .btn.confirm { background: var(--amber); color: #3a2703; }
 
+/* ---------- FAB (acción flotante, disponible en todas las pestañas) ---------- */
+.fab-wrap {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 12px;
+}
+.fab {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: none;
+  background: var(--mint);
+  color: var(--mint-ink);
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.fab:hover { transform: translateY(-2px); }
+.fab:active { transform: scale(0.94); }
+.fab.open { transform: rotate(45deg); }   /* "+" -> "×" */
+
+.fab-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px;
+  min-width: 240px;
+  box-shadow: var(--shadow);
+  animation: rise 0.25s var(--ease) both;
+  transform-origin: bottom right;
+}
+.fab-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background 0.12s var(--ease);
+}
+.fab-row:hover { background: rgba(255, 255, 255, 0.05); }
+.fab-row-main { display: flex; flex-direction: column; gap: 1px; }
+.fab-row-icon {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+}
+.fab-row-icon.mint { background: var(--income-soft); }
+.fab-row-icon.coral { background: var(--expense-soft); }
+.fab-row-icon.amber { background: var(--amber-soft); }
+.fab-row-icon.violet { background: rgba(174, 149, 255, 0.14); }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;

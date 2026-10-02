@@ -76,20 +76,6 @@
         <div class="card summary hero">
           <div class="card-label">Balance</div>
           <div class="card-value" id="sum-balance">—</div>
-          <div class="qa-row" id="qa-row">
-            <button class="qa" data-action="cobro" type="button">
-              <span class="qa-icon">💵</span><span>Registrar cobro</span>
-            </button>
-            <button class="qa" data-action="gasto" type="button">
-              <span class="qa-icon">💸</span><span>Registrar gasto</span>
-            </button>
-            <button class="qa" data-action="pagar" type="button">
-              <span class="qa-icon">🗓</span><span>Pagar vencimiento</span>
-            </button>
-            <button class="qa" data-action="consulta" type="button">
-              <span class="qa-icon">🤖</span><span>¿Cómo voy?</span>
-            </button>
-          </div>
         </div>
         <div class="card summary income">
           <div class="card-label">Ingresos</div>
@@ -287,6 +273,29 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Acción flotante: el gesto más común vive a un tap, en cualquier pestaña -->
+  <div class="fab-wrap" id="fab-wrap">
+    <div class="fab-sheet hidden" id="fab-sheet">
+      <button class="fab-row" data-action="cobro" type="button">
+        <span class="fab-row-icon mint">💵</span>
+        <span class="fab-row-main"><strong>Registrar cobro</strong><small class="muted">Dinero que entra</small></span>
+      </button>
+      <button class="fab-row" data-action="gasto" type="button">
+        <span class="fab-row-icon coral">💸</span>
+        <span class="fab-row-main"><strong>Registrar gasto</strong><small class="muted">Dinero que sale</small></span>
+      </button>
+      <button class="fab-row" data-action="pagar" type="button">
+        <span class="fab-row-icon amber">🗓</span>
+        <span class="fab-row-main"><strong>Pagar vencimiento</strong><small class="muted">Lo que se termina este mes</small></span>
+      </button>
+      <button class="fab-row" data-action="consulta" type="button">
+        <span class="fab-row-icon violet">🤖</span>
+        <span class="fab-row-main"><strong>Preguntar al agente</strong><small class="muted">Cómo voy, qué falta</small></span>
+      </button>
+    </div>
+    <button class="fab" id="fab" type="button" aria-label="Acciones rápidas" aria-expanded="false">+</button>
+  </div>
 
   <script src="/app.js"></script>
 </body>
