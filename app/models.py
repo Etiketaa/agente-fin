@@ -101,11 +101,61 @@ class Transaction(Base):
     # Procedencia del ingreso (qué cliente o fuente pagó). Solo ingresos:
     # permite responder "¿cuánto entró de cada lado este mes?".
     source: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    # De qué billetera salió/entró la plata. Opcional en el formulario, pero el
+    # backend siempre lo resuelve (a "General" si no viene), así ningún
+    # movimiento queda fuera del patrimonio. Es lo que mantiene al día el saldo
+    # de cada billetera (ver `models.Account`).
+    cuenta_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     category: Mapped[Category] = relationship()
     goal: Mapped["SavingsGoal | None"] = relationship()
     vehicle: Mapped["Vehicle | None"] = relationship()
+    account: Mapped["Account | None"] = relationship()
+
+
+class Account(Base):
+    """Billetera o cuenta donde tenés la plata: Mercado Pago, banco, efectivo.
+
+    Con varias billeteras (y más todavía si las van a usar clientes) el saldo
+    NO puede ser un número que el usuario escribe y se queda viejo: serían N
+    actualizaciones manuales por semana y en dos semanas el total miente.
+
+    Entonces el saldo es derivado, como en una agenda de cuentas real:
+
+        saldo = apertura_cents + Σ movimientos de esta billetera
+
+    - `apertura_cents` es el saldo real que tenía el día que la cargaste. Se
+      escribe una vez, y es la verdad de partida contra la app.
+    - Cada movimiento con `cuenta_id` apunta a una billetera: los cobros suman,
+      los gastos restan. El saldo se mantiene solo.
+    - Si la realidad se desvía (un movimiento que no cargaste, un cobro que
+      no entró), "Ajustar saldo" recalcula la apertura para que el saldo
+      derive exactamente al número real. No borra historia ni inventa
+      movimientos.
+
+    Un movimiento sin `cuenta_id` nunca queda huérfano: el backend lo imputa a
+    la billetera "General" del usuario, así el patrimonio total nunca pierde
+    plata (ver `app.seed.DEFAULT_ACCOUNT_NAME`).
+    """
+
+    __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(80))  # "Mercado Pago", "Banco", "Efectivo"
+    kind: Mapped[str] = mapped_column(String(10), default="otro")  # banco|digital|efectivo|otro
+    apertura_cents: Mapped[int] = mapped_column(Integer, default=0)  # saldo de partida
+    notes: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class SavingsGoal(Base):

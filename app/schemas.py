@@ -23,6 +23,10 @@ class TransactionCreate(BaseModel):
     source: str | None = Field(
         default=None, description="Procedencia del ingreso (cliente, fuente). Solo para type=income."
     )
+    cuenta: str | None = Field(
+        default=None,
+        description="Billetera del movimiento (opcional). Si no viene, cae en «General».",
+    )
 
 
 class TransactionOut(BaseModel):
@@ -35,6 +39,7 @@ class TransactionOut(BaseModel):
     date: Date
     goal: str | None = None
     source: str | None = None
+    cuenta: str | None = None  # billetera imputada
 
 
 class IncomeSourceTotal(BaseModel):
@@ -174,6 +179,56 @@ class AlertOut(BaseModel):
     severity: str  # "alta" | "media" | "baja"
     kind: str  # "vencimiento" | "presupuesto" | "objetivo" | "anomalia"
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Billeteras (patrimonio)
+# ---------------------------------------------------------------------------
+
+class AccountCreate(BaseModel):
+    """Al crear, `saldo` es el saldo real que tiene la billetera HOY: queda como
+    apertura y de ahí en adelante se mueve sola con cada movimiento."""
+
+    name: str = Field(min_length=1, max_length=80)
+    kind: Literal["banco", "digital", "efectivo", "otro"] = "otro"
+    # admite negativo: una tarjeta en rojo es un saldo negativo real
+    saldo: float = Field(default=0.0, allow_inf_nan=False)
+    notes: str = Field(default="", max_length=200)
+
+
+class AccountUpdate(BaseModel):
+    """Actualización parcial: mandás solo lo que cambia.
+
+    Mandar `saldo` es una conciliación: el saldo derivado pasa a ser exactamente
+    ese número (no borra movimientos ni inventa los que faltaban).
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    kind: Literal["banco", "digital", "efectivo", "otro"] | None = None
+    saldo: float | None = Field(default=None, allow_inf_nan=False)
+    notes: str | None = Field(default=None, max_length=200)
+
+
+class AccountOut(BaseModel):
+    id: int
+    name: str
+    kind: str
+    es_default: bool = False  # True = billetera «General» (movimientos sin asignar)
+    apertura: float  # saldo de partida
+    apertura_cents: int
+    balance: float  # apertura + movimientos (derivado)
+    balance_cents: int
+    movimientos: int
+    ultimo_movimiento: str | None = None  # ISO
+    notes: str
+    updated_at: str | None = None  # ISO; la UI avisa si el saldo es viejo
+
+
+class AccountsOut(BaseModel):
+    accounts: list[AccountOut]
+    total: float  # patrimonio: suma de los saldos
+    total_cents: int
+    count: int
 
 
 # ---------------------------------------------------------------------------

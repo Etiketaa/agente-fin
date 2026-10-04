@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import Bill, Budget, Category, SavingsGoal, Transaction, Vehicle
+from .models import Account, Bill, Budget, Category, SavingsGoal, Transaction, Vehicle
 
 # Estados posibles de un presupuesto dentro de su mes.
 OK = "ok"
@@ -47,6 +47,12 @@ BILL_ALERT_DAYS = 7
 ALTA = "alta"
 MEDIA = "media"
 BAJA = "baja"
+
+# Tipos de billetera.
+BANCO = "banco"
+DIGITAL = "digital"
+EFECTIVO = "efectivo"
+OTRO = "otro"
 
 
 # ---------------------------------------------------------------------------
@@ -508,6 +514,98 @@ def income_rows(db: Session, user_id: int, month: str | None = None) -> list[Inc
         )
         for t in txs
     ]
+
+
+# ---------------------------------------------------------------------------
+# Billeteras (patrimonio: la plata que hay, no la que pasó)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class AccountRow:
+    id: int
+    name: str
+    kind: str  # "banco" | "digital" | "efectivo" | "otro"
+    apertura_cents: int  # saldo de partida (lo que había al cargarla)
+    balance_cents: int  # derivado: apertura + movimientos de la billetera
+    movimientos: int  # cuántos movimientos tiene imputados
+    ultimo_movimiento: date | None
+    notes: str
+    updated_at: datetime | None
+
+
+def _neto_por_cuenta(db: Session, user_id: int) -> dict[int, tuple[int, int, date | None]]:
+    """Neto (ingresos − gastos), cantidad y última fecha, agrupado por billetera.
+
+    Una sola consulta para todas las billeteras: son miles de filas y esto se
+    recalcula en cada refresh del panel.
+    """
+    filas = db.execute(
+        select(
+            Transaction.cuenta_id,
+            func.sum(
+                case(
+                    (Transaction.type == "income", Transaction.amount_cents),
+                    else_=-Transaction.amount_cents,
+                )
+            ),
+            func.count(Transaction.id),
+            func.max(Transaction.date),
+        )
+        .where(Transaction.user_id == user_id, Transaction.cuenta_id.isnot(None))
+        .group_by(Transaction.cuenta_id)
+    ).all()
+    return {
+        cuenta_id: (int(neto or 0), int(cantidad or 0), ultimo)
+        for cuenta_id, neto, cantidad, ultimo in filas
+    }
+
+
+def account_rows(db: Session, user_id: int) -> list[AccountRow]:
+    """Billeteras del usuario con su saldo DERIVADO, de mayor a menor.
+
+    El saldo sale de `apertura_cents + Σ movimientos` (ver `models.Account`): se
+    mantiene solo a medida que se registran cobros y gastos, sin tener que
+    actualizar N billeteras a mano. Lo consumen la tarjeta del panel
+    (`GET /api/accounts`) y la herramienta `listar_billeteras` del agente, así
+    que el número de la pantalla y el del chat no pueden divergir.
+    """
+    por_cuenta = _neto_por_cuenta(db, user_id)
+    accounts = db.scalars(select(Account).where(Account.user_id == user_id)).all()
+    rows = [
+        AccountRow(
+            id=a.id,
+            name=a.name,
+            kind=a.kind if a.kind in (BANCO, DIGITAL, EFECTIVO, OTRO) else OTRO,
+            apertura_cents=a.apertura_cents,
+            balance_cents=a.apertura_cents + por_cuenta.get(a.id, (0, 0, None))[0],
+            movimientos=por_cuenta.get(a.id, (0, 0, None))[1],
+            ultimo_movimiento=por_cuenta.get(a.id, (0, 0, None))[2],
+            notes=a.notes or "",
+            updated_at=a.updated_at,
+        )
+        for a in accounts
+    ]
+    rows.sort(key=lambda r: (-r.balance_cents, r.name))
+    return rows
+
+
+def total_cents(db: Session, user_id: int) -> int:
+    """Patrimonio total: la suma de los saldos de todas las billeteras."""
+    return sum(r.balance_cents for r in account_rows(db, user_id))
+
+
+def reconcile_account(db: Session, acc: Account, declarado_cents: int, user_id: int) -> int:
+    """Fija la apertura para que el saldo DERIVADO sea el saldo real declarado.
+
+    Es una conciliación, no una corrección de historia: el movimiento que te
+    faltó no se inventa, sólo deja de desfasar el total. Devuelve la apertura
+    nueva (queda negativa si declarás un saldo menor que lo ya movido).
+    """
+    neto = _neto_por_cuenta(db, user_id).get(acc.id, (0, 0, None))[0]
+    acc.apertura_cents = declarado_cents - neto
+    db.commit()
+    db.refresh(acc)
+    return acc.apertura_cents
 
 
 # ---------------------------------------------------------------------------

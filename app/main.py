@@ -25,13 +25,17 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     "vehicles": {"id", "user_id", "name", "kind", "notes", "created_at"},
     "transactions": {
         "id", "user_id", "type", "amount_cents", "description", "date", "category_id",
-        "goal_id", "tags", "vehicle_id", "import_hash", "source", "created_at",
+        "goal_id", "tags", "vehicle_id", "import_hash", "source", "cuenta_id", "created_at",
     },
     "savings_goals": {"id", "user_id", "name", "target_cents", "target_date", "kind", "notes", "created_at"},
     "budgets": {"id", "user_id", "category_id", "amount_cents", "rollover_cents", "created_at"},
     "bills": {
         "id", "user_id", "description", "amount_cents", "due_date", "category_id",
         "recurrence", "paid_at", "notes", "created_at",
+    },
+    "accounts": {
+        "id", "user_id", "name", "kind", "apertura_cents", "notes", "created_at",
+        "updated_at",
     },
 }
 
@@ -62,12 +66,15 @@ async def lifespan(_app: FastAPI):
     # Ya no se siembran categorías globales: cada usuario recibe las suyas al
     # registrarse (ver app/seed.py). Los usuarios existentes sin categorías las
     # reciben en el primer request autenticado (get_current_user las completa).
-    from .seed import DEFAULT_CATEGORIES, seed_user_categories
+    from .seed import DEFAULT_CATEGORIES, seed_user_accounts, seed_user_categories
 
     db = SessionLocal()
     try:
         for user in db.scalars(select(User)).all():
             seed_user_categories(db, user)
+            # Billetera «General» + imputación de movimientos sin cuenta
+            # (idempotente: sólo toca los que no la tienen).
+            seed_user_accounts(db, user)
     finally:
         db.close()
     yield
