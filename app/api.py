@@ -909,12 +909,24 @@ def summary(
     else:
         period = "todo el historial"
 
+    comp = analytics.comprometido(db, user.id)
+
     return SummaryOut(
         period=period,
         balance=cents_to_money(total_income - total_expense),
         total_income=cents_to_money(total_income),
         total_expense=cents_to_money(total_expense),
         count=len(rows),
+        comprometido=cents_to_money(comp.total_cents),
+        comprometido_cents=comp.total_cents,
+        comprometido_mes=cents_to_money(comp.mes_cents),
+        comprometido_mes_cents=comp.mes_cents,
+        vencido=cents_to_money(comp.vencidos_cents),
+        vencido_cents=comp.vencidos_cents,
+        disponible=cents_to_money(comp.disponible_cents),
+        disponible_cents=comp.disponible_cents,
+        comprometido_count=comp.count,
+        vencido_count=comp.vencidos_count,
         by_category=[
             CategoryTotal(category=name, kind=item["kind"], total=cents_to_money(item["total_cents"]))
             for name, item in sorted(by_category.items(), key=lambda kv: -kv[1]["total_cents"])

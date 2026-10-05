@@ -594,6 +594,57 @@ def total_cents(db: Session, user_id: int) -> int:
     return sum(r.balance_cents for r in account_rows(db, user_id))
 
 
+@dataclass(frozen=True)
+class Comprometido:
+    """Plata que ya sabés que tenés que pagar, según los vencimientos.
+
+    Son cuatro montos y dos conteos porque cada uno contesta una pregunta
+    distinta:
+    - `total_cents`: cuánto debés en total (vencido + futuro). Es contra este
+      número contra el que hay que mirar "disponible".
+    - `mes_cents`: cuánto se va este mes calendario.
+    - `vencidos_cents`: lo que ya venció y todavía no pagaste (lo urgente).
+    - `disponible_cents`: patrimonio − lo comprometido. El único número que
+      contesta "¿puedo gastar esto?".
+
+    Los `count` van porque el monto solo no alcanza: 450.000 comprometidos son
+    una cosa si es un pago y otra si son cinco, y el usuario decide distinto.
+
+    Vive acá y no en cada pantalla porque el agente y el panel tienen que dar
+    el mismo disponible: si lo calcularan por su cuenta, un día divergen.
+    """
+
+    total_cents: int
+    mes_cents: int
+    vencidos_cents: int
+    disponible_cents: int
+    count: int
+    vencidos_count: int
+
+
+def comprometido(db: Session, user_id: int) -> Comprometido:
+    """Suma los vencimientos impagos y descuenta lo que ya no está disponible.
+
+    A diferencia del resto del resumen, esto NO tiene período: un vencimiento no
+    "es de este mes" o "de este año", vence en una fecha. Por eso los callers lo
+    tratan aparte del filtro de fechas de los movimientos.
+    """
+    hoy = date.today()
+    filas = bill_rows(db, user_id)
+    total = sum(f.amount_cents for f in filas)
+    mes = sum(f.amount_cents for f in filas if f.due_date.year == hoy.year and f.due_date.month == hoy.month)
+    return Comprometido(
+        total_cents=total,
+        mes_cents=mes,
+        vencidos_cents=sum(f.amount_cents for f in filas if f.days_until < 0),
+        # Puede dar negativo si debés más de lo que tenés: es la verdad, y
+        # por eso el disponible se muestra con signo.
+        disponible_cents=total_cents(db, user_id) - total,
+        count=len(filas),
+        vencidos_count=sum(1 for f in filas if f.days_until < 0),
+    )
+
+
 def reconcile_account(db: Session, acc: Account, declarado_cents: int, user_id: int) -> int:
     """Fija la apertura para que el saldo DERIVADO sea el saldo real declarado.
 

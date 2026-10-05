@@ -485,6 +485,32 @@ def _run(c: Cleanup):
     pendientes = req("GET", "/api/bills")
     check("lista solo pendientes", {x["id"] for x in pendientes} >= {v1["id"], v2["id"]})
 
+    # El dinero comprometido: el número que hace falta para "¿puedo gastar?".
+    # Todo en centavos: v1 = 80.000 (8.000.000) y v2 = 500.000 (50.000.000).
+    V1_C = 8000000
+    V2_C = 50000000
+    s = req("GET", "/api/summary")
+    check("el comprometido es la suma de los vencimientos impagos",
+          s["comprometido_cents"] == V1_C + V2_C)
+    check("el vencido se separa del total",
+          s["vencido_cents"] == V2_C and s["vencido_cents"] < s["comprometido_cents"])
+    # El monto solo no dice si es un pago o cinco: los conteos acompañan.
+    check("los conteos de vencimientos acompañan a los montos",
+          s["comprometido_count"] == 2 and s["vencido_count"] == 1)
+    # v1 cae del mes que viene si hoy es 29/30/31; v2 (hace 2 días) siempre
+    # está en el mes corriente.
+    vence_mes = (hoy + _td(days=3)).month == hoy.month
+    check("el comprometido del mes sólo cuenta lo que vence este mes",
+          s["comprometido_mes_cents"] == (V1_C if vence_mes else 0) + V2_C)
+    check("disponible = patrimonio − comprometido",
+          s["disponible_cents"] == req("GET", "/api/accounts")["total_cents"] - s["comprometido_cents"])
+    # El resumen tiene período propio, pero los vencimientos no lo tienen: por
+    # eso estas dos cifras no deben cambiar al filtrar fechas.
+    s_otro = req("GET", "/api/summary?desde=1990-01-01&hasta=1990-12-31")
+    check("el comprometido ignora el filtro de fechas",
+          s_otro["comprometido_cents"] == s["comprometido_cents"]
+          and s_otro["disponible_cents"] == s["disponible_cents"])
+
     alerts = req("GET", "/api/alerts")
     kinds = {(a["kind"], a["severity"]) for a in alerts}
     check("alertas incluyen el vencido en alta",

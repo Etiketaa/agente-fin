@@ -6,6 +6,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ... import analytics
 from ...models import Account, Category, SavingsGoal, Transaction
 from ...config import get_settings
 from .base import (
@@ -202,6 +203,29 @@ def calcular_balance(db: Session, args: dict, user_id: int) -> str:
     return (
         f"Balance{sufijo}: {fmt(income - expense)}. "
         f"Ingresos: {fmt(income)}. Gastos: {fmt(expense)}."
+        + _linea_disponible(db, user_id)
+    )
+
+
+def _linea_disponible(db: Session, user_id: int) -> str:
+    """La parte que hace falta para contestar "¿puedo gastar X?".
+
+    El balance dice cuánto ganaste y gastaste, pero NO si esa plata ya está
+    comprometida con vencimientos. Sin esta línea el agente compara un gasto
+    contra un número que todavía hay que pagar.
+    """
+    patrimonio = analytics.total_cents(db, user_id)
+    comp = analytics.comprometido(db, user_id)
+    if not comp.total_cents:
+        return f" Tenés {fmt(patrimonio)} y no tenés nada pendiente de pago."
+    n = comp.count
+    cant = f"{n} vencimiento{'s' if n != 1 else ''}"
+    mes = f" ({fmt(comp.mes_cents)} vencen este mes)" if comp.mes_cents else ""
+    vencido = f" Ojo: {fmt(comp.vencidos_cents)} ya vencieron sin pagar." if comp.vencidos_cents else ""
+    return (
+        f" Tenés {fmt(patrimonio)} y de eso {fmt(comp.total_cents)} está comprometido en "
+        f"{cant} pendiente{'s' if n != 1 else ''}{mes}, así que tu disponible real es "
+        f"{fmt(comp.disponible_cents)}.{vencido}"
     )
 
 

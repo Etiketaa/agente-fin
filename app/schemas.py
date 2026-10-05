@@ -79,6 +79,22 @@ class SummaryOut(BaseModel):
     total_expense: float
     count: int
     by_category: list[CategoryTotal]
+    # Dinero comprometido: IGNORA `desde`/`hasta` a propósito, porque un
+    # vencimiento no pertenece a un período, vence en una fecha. Es lo que ya
+    # sabés que tenés que pagar, y lo que hay que restarle al patrimonio para
+    # saber cuánto está realmente disponible.
+    comprometido: float
+    comprometido_cents: int
+    comprometido_mes: float
+    comprometido_mes_cents: int
+    vencido: float
+    vencido_cents: int
+    disponible: float
+    disponible_cents: int
+    # Quantos vencimientos forman el comprometido. Sin el número, el texto
+    # "450.000 comprometidos" no dice si es un pago grande o cinco chicos.
+    comprometido_count: int
+    vencido_count: int
 
 
 # ---------------------------------------------------------------------------
