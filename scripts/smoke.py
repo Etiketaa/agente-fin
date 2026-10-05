@@ -9,12 +9,13 @@ posible aunque el script falle a mitad de camino.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 
-BASE = "http://127.0.0.1:8000"
+BASE = os.getenv("SMOKE_BASE", "http://127.0.0.1:8000")
 
 # Token por defecto para los requests autenticados. Los checks de aislamiento
 # lo pisan temporalmente con with_token().
@@ -111,6 +112,7 @@ class Cleanup:
         self.goals: list[int] = []
         self.budgets: list[int] = []
         self.bills: list[int] = []
+        self.accounts: list[int] = []
 
     def run(self) -> None:
         for path, ids in (
@@ -124,10 +126,17 @@ class Cleanup:
                     req("DELETE", f"{path}/{i}")
                 except Exception:
                     pass
-        if self.txs or self.goals or self.budgets or self.bills:
+        # Las billeteras van al final: primero desaparecen los movimientos que
+        # tienen, así que no hace falta mandarlos a «General» al limpiar.
+        for i in self.accounts:
+            try:
+                req("DELETE", f"/api/accounts/{i}")
+            except Exception:
+                pass
+        if self.txs or self.goals or self.budgets or self.bills or self.accounts:
             print(f"\nLimpieza: {len(self.txs)} transacciones, "
                   f"{len(self.goals)} objetivos, {len(self.budgets)} presupuestos, "
-                  f"{len(self.bills)} vencimientos borrados.")
+                  f"{len(self.bills)} vencimientos y {len(self.accounts)} billeteras borrados.")
 
 
 def main():
@@ -251,6 +260,110 @@ def _run(c: Cleanup):
     check("la vista diaria contiene días con items",
           bool(inc["days"]) and len(inc["days"][0]["items"]) > 0)
     expect_error("mes de ingresos mal formado", lambda: req("GET", "/api/income?mes=no-fecha"), 400)
+
+    # ------------------------------------------------------------- billeteras
+    print("\n[billeteras y patrimonio]")
+    # Resiliente a corridas interrumpidas: si quedó una billetera de este test de
+    # una vuelta anterior, el alta daría 409 para siempre. Se borra primero.
+    for a in req("GET", "/api/accounts")["accounts"]:
+        if a["name"].lower() == "smoke mp":
+            req("DELETE", f"/api/accounts/{a['id']}?reasignar=1")
+    # Los totales se comparan contra la línea de partida, no contra cero: el
+    # usuario del smoke puede arrastrar datos de una corrida anterior.
+    total_base = req("GET", "/api/accounts")["total_cents"]
+
+    mp = req("POST", "/api/accounts", {"name": "Smoke MP", "kind": "digital", "saldo": 50000})
+    c.accounts.append(mp["id"])
+    check(f"crea billetera #{mp['id']} con apertura de 50000",
+          mp["apertura_cents"] == 5000000)
+    check("arranca sin movimientos y con el saldo igual a la apertura",
+          mp["balance_cents"] == mp["apertura_cents"] and mp["movimientos"] == 0)
+
+    expect_error("nombre de billetera duplicado (sin distinguir mayúsculas)",
+                 lambda: req("POST", "/api/accounts",
+                             {"name": "SMOKE MP", "kind": "digital", "saldo": 1}), 409)
+    expect_error("no se puede crear una billetera llamada «General»",
+                 lambda: req("POST", "/api/accounts",
+                             {"name": "General", "kind": "otro", "saldo": 1}), 409)
+    expect_error("ni una variante en minúscula del nombre reservado",
+                 lambda: req("POST", "/api/accounts",
+                             {"name": "gEnErAl", "kind": "otro", "saldo": 1}), 409)
+    expect_error("ni al renombrar una billetera a «General»",
+                 lambda: req("PATCH", f"/api/accounts/{mp['id']}", {"name": "general"}), 409)
+
+    # El saldo es DERIVADO (apertura + movimientos), no un snapshot que hay que
+    # actualizar a mano cada vez que cargás un gasto.
+    tm = req("POST", "/api/transactions",
+             {"type": "expense", "amount": 2500, "category": "Comida", "cuenta": "Smoke MP"})
+    c.txs.append(tm["id"])
+    ti = req("POST", "/api/transactions",
+             {"type": "income", "amount": 30000, "category": "Freelance", "cuenta": "smoke mp"})
+    c.txs.append(ti["id"])
+    row = next(a for a in req("GET", "/api/accounts")["accounts"] if a["id"] == mp["id"])
+    check("el movimiento se imputa a la billetera (sin distinguir mayúsculas)",
+          tm["cuenta"] == "Smoke MP" and ti["cuenta"] == "Smoke MP")
+    check("el saldo deriva solo (50000 − 2500 + 30000)",
+          row["balance_cents"] == 7750000 and row["movimientos"] == 2)
+
+    # Conciliación: se declara el saldo real y el backend rebasa la apertura,
+    # sin borrar ni inventar movimientos.
+    aj = req("PATCH", f"/api/accounts/{mp['id']}", {"saldo": 70000})
+    check("ajustar saldo deja el derivado igual al declarado",
+          aj["balance_cents"] == 7000000)
+    check("los movimientos no se tocan al conciliar", aj["movimientos"] == 2)
+    expect_error("ajustar una billetera ajena o inexistente",
+                 lambda: req("PATCH", "/api/accounts/999999", {"saldo": 1}), 404)
+
+    # Sin billetera, el movimiento cae en «General»: el patrimonio no pierde plata.
+    tg = req("POST", "/api/transactions",
+             {"type": "expense", "amount": 100, "category": "Comida"})
+    c.txs.append(tg["id"])
+    check("un movimiento sin billetera va a «General»", tg["cuenta"] == "General")
+    expect_error("billetera inexistente",
+                 lambda: req("POST", "/api/transactions",
+                             {"type": "expense", "amount": 100, "category": "Comida",
+                              "cuenta": "No Existe"}), 400)
+
+    cuentas = req("GET", "/api/accounts")["accounts"]
+    check("el patrimonio total es la suma de las billeteras",
+          req("GET", "/api/accounts")["total_cents"]
+          == sum(a["balance_cents"] for a in cuentas))
+    check("el patrimonio es la partida + lo derivado (70000 − 100)",
+          req("GET", "/api/accounts")["total_cents"] == total_base + 7000000 - 10000)
+    general = next(a for a in cuentas if a["name"] == "General")
+    check("«General» viene marcada como la billetera por defecto", general["es_default"])
+
+    with with_token(tok_b):
+        b_cuentas = req("GET", "/api/accounts")["accounts"]
+        check("B no ve las billeteras de A",
+              all(a["id"] != mp["id"] for a in b_cuentas))
+        expect_error("B no puede ajustar una billetera de A",
+                     lambda: req("PATCH", f"/api/accounts/{mp['id']}", {"saldo": 1}), 404)
+        expect_error("B no puede borrar una billetera de A",
+                     lambda: req("DELETE", f"/api/accounts/{mp['id']}"), 404)
+        # «General» nace en 0: la plata del movimiento sin asignar cuenta desde
+        # este momento, no el histórico del usuario.
+        tb = req("POST", "/api/transactions",
+                 {"type": "expense", "amount": 250, "category": "Comida"})
+        b_general = next(a for a in req("GET", "/api/accounts")["accounts"] if a["es_default"])
+        check("la billetera «General» nace en 0 y sólo acumula lo nuevo",
+              b_general["apertura_cents"] == 0 and b_general["balance_cents"] == -25000)
+        req("DELETE", f"/api/transactions/{tb['id']}")
+
+    expect_error("«General» no se puede borrar",
+                 lambda: req("DELETE", f"/api/accounts/{general['id']}"), 409)
+    expect_error("borrar una billetera con movimientos pide reasignar",
+                 lambda: req("DELETE", f"/api/accounts/{mp['id']}"), 409)
+    req("DELETE", f"/api/accounts/{mp['id']}?reasignar=1")
+    c.accounts.remove(mp["id"])
+    movs = req("GET", "/api/transactions?limite=100")
+    check("los movimientos de la billetera borrada pasan a «General»",
+          all(t["cuenta"] == "General" for t in movs if t["id"] in (tm["id"], ti["id"])))
+    check("al borrar, la plata declarada sale del patrimonio y sus movimientos quedan en «General»",
+          # La billetera ya no existe, así que su apertura (42500, rebasada al
+          # conciliar) deja de contarse; los movimientos que tenía (neto +27500)
+          # sobreviven dentro de «General».
+          req("GET", "/api/accounts")["total_cents"] == total_base - 10000 + 2750000)
 
     # ------------------------------------------------------------------ metas
     print("\n[objetivos de ahorro]")

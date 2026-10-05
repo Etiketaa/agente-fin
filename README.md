@@ -90,6 +90,10 @@ Frontend (chat) → POST /api/agent/chat → bucle: modelo → tools → modelo 
 | `crear_vencimiento` | Carga un pago futuro, único o mensual | No (es una intención, no mueve dinero) |
 | `pagar_vencimiento` | Marca pagado, genera el gasto y crea el siguiente si es mensual | **Siempre** |
 | `listar_alertas` | Centro de alertas consolidado | No |
+| `listar_billeteras` | Billeteras con su saldo derivado y el patrimonio total | No |
+| `crear_billetera` | Da de alta una billetera con el saldo real que tiene hoy | **Siempre** (fija de qué plata habla) |
+| `ajustar_saldo_billetera` | Conciliación: el saldo derivado pasa a ser el número real declarado | **Siempre** (reescribe el saldo) |
+| `eliminar_billetera` | Borra la billetera; sus movimientos pasan a «General» | **Siempre** |
 | `eliminar_transaccion` | Borra un movimiento | **Siempre** |
 | `eliminar_objetivo` | Borra un objetivo (falla si tiene aportes) | **Siempre** |
 | `eliminar_presupuesto` | Borra un presupuesto | **Siempre** |
@@ -178,6 +182,34 @@ consolida en un solo lugar, de lo más urgente a lo menos:
 El agente usa la misma función vía `listar_alertas`: lo que ves en el panel
 es lo que te dice el chat. Preguntale *"¿qué tengo pendiente?"*.
 
+## Billeteras y patrimonio
+
+Una billetera es una cuenta real (Mercado Pago, el banco, efectivo). El Panel
+muestra el **patrimonio total** arriba y el detalle por billetera abajo.
+
+**El saldo de una billetera no se guarda: se deriva.** Es
+`apertura_cents + Σ movimientos`, igual que el saldo de un objetivo se deriva de
+sus aportes. El único número que se declara a mano es la apertura (el saldo real
+que tiene la billetera hoy); de ahí en adelante se mueve sola con cada
+movimiento que le cargues. Con varias billeteras, un snapshot manual se desactualiza
+en semanas y el total miente: esto no tiene un segundo número que pueda mentir.
+
+"Ajustar saldo" es una **conciliación**, no una corrección: mandás el número que
+figura hoy en la app del banco y el backend rebasa la apertura para que el
+derivado dé exactamente ese número. No borra movimientos ni inventa los que
+faltaban.
+
+Cada movimiento tiene que caer en una billetera. Si el movimiento no dice
+cuál, el backend lo imputa a **«General»**, una billetera que existe siempre por
+usuario: el patrimonio no puede perder plata porque te olvidaste de elegir.
+«General» no se puede borrar ni renombrar, y en la interfaz no muestra botones
+de ajuste — es un destino automático, no una cuenta que declares.
+
+En la fila de cada billetera hay un solo botón (ajustar saldo). Borrar vive
+dentro de esa misma hoja: en un teléfono de 360px una fila con dos botones deja
+el nombre ilegible, y borrar una billetera amerita que ya hayas abierto esa
+billetera.
+
 ## Usuarios y autenticación
 
 Cada usuario ve **solo sus datos**: registro con `POST /api/auth/register`
@@ -236,7 +268,7 @@ finanzas/
 ├── app/
 │   ├── config.py          # configuración vía .env
 │   ├── db.py              # motor + sesiones (SQLite → PostgreSQL después)
-│   ├── models.py          # User, Category, Transaction, SavingsGoal, Budget, Bill, Vehicle (centavos)
+│   ├── models.py          # User, Category, Transaction, SavingsGoal, Budget, Bill, Vehicle, Account (centavos)
 │   ├── auth.py            # hashing PBKDF2 + tokens opacos (stdlib, sin deps)
 │   ├── seed.py            # categorías iniciales por usuario
 │   ├── schemas.py         # contratos Pydantic de la API
@@ -247,13 +279,14 @@ finanzas/
 │   └── agent/
 │       ├── provider.py    # ← capa de proveedor intercambiable
 │       ├── agent.py       # bucle agente ↔ herramientas + confirmación
-│       └── tools/         # 24 herramientas, una por módulo
+│       └── tools/         # 28 herramientas, una por módulo
 │           ├── base.py            # formato de moneda + tipos comunes
 │           ├── transactions.py    # movimientos + balance + resumen
 │           ├── goals.py           # objetivos de ahorro
 │           ├── budgets.py         # presupuestos mensuales
 │           ├── vehicles.py        # vehículos (moto, auto)
 │           ├── imports.py         # importar CSV + anomalías
+│           ├── accounts.py        # billeteras + patrimonio
 │           └── bills.py           # vencimientos + centro de alertas
 ├── static/                # frontend (sin build step)
 │   ├── index.html
@@ -261,7 +294,7 @@ finanzas/
 │   └── app.js
 ├── scripts/
 │   ├── demo.py            # datos de ejemplo (opcional)
-│   ├── smoke.py           # regresión end-to-end (65 chequeos, incluye auth y aislamiento)
+│   ├── smoke.py           # regresión end-to-end (98 chequeos, incluye auth y aislamiento)
 │   └── prove_provider.py  # prueba real contra el proveedor configurado
 └── requirements.txt
 ```
@@ -363,6 +396,12 @@ Hecho:
    que genera el gasto, + centro de alertas unificado panel/agente).
 6. ✅ **Autenticación + multiusuario** (usuarios con token, aislamiento total
    por `user_id`, categorías por usuario, verificado en SQLite y PostgreSQL).
+7. ✅ **Procedencia de los ingresos** (`source`): cargás el cobro con su origen
+   y el mes se desglosa por fuente, no solo por total.
+8. ✅ **Objetivos de dos tipos**: `ahorro` (juntás hasta X) y `recaudación`
+   (ahorrás netamente para un fin, gastando en el camino).
+9. ✅ **Billeteras + patrimonio** (saldo derivado por billetera, conciliación,
+   «General» como destino de lo que no se imputa, agente con 4 herramientas).
 
 Roadmap completo. Posibles siguientes (no definidos): app móvil / PWA con
 login persistente, rate-limit al login, expiración de sesiones, roles
