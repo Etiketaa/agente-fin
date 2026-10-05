@@ -20,6 +20,10 @@
   <header class="app-header">
     <div class="app-header-inner">
       <h1>💰 Finanzas Personales</h1>
+      <!-- En el teléfono esta nav se oculta y queda la barra de abajo: con
+           cinco destinos arriba se comía media pantalla y el contenido
+           empezaba en el pliegue. En escritorio sigue estando arriba, que
+           es donde se la espera. Las dos comparten `data-view`. -->
       <nav class="tabs" id="main-nav">
         <button class="tab active" data-view="panel">Inicio</button>
         <button class="tab" data-view="movimientos">Movimientos</button>
@@ -419,6 +423,33 @@
       <button type="submit" class="btn primary">Guardar vencimiento</button>
     </form>
   </div>
+
+  <!-- Barra inferior: los cinco destinos, al alcance del pulgar y siempre
+       visibles. En escritorio se oculta y la nav del header la reemplaza.
+       No lleva el botón de agregar: esa acción es el FAB, que flota justo
+       arriba de esta barra. -->
+  <nav class="tabbar" id="main-tabbar" aria-label="Destinos">
+    <button class="tabbar-item active" data-view="panel" type="button">
+      <span class="tabbar-icon" aria-hidden="true">🏠</span>
+      <span class="tabbar-label">Inicio</span>
+    </button>
+    <button class="tabbar-item" data-view="movimientos" type="button">
+      <span class="tabbar-icon" aria-hidden="true">📋</span>
+      <span class="tabbar-label">Movim.</span>
+    </button>
+    <button class="tabbar-item" data-view="metas" type="button">
+      <span class="tabbar-icon" aria-hidden="true">🎯</span>
+      <span class="tabbar-label">Metas</span>
+    </button>
+    <button class="tabbar-item" data-view="agent" type="button">
+      <span class="tabbar-icon" aria-hidden="true">🤖</span>
+      <span class="tabbar-label">Agente</span>
+    </button>
+    <button class="tabbar-item" data-view="mas" type="button">
+      <span class="tabbar-icon tabbar-icon-more" aria-hidden="true">•••</span>
+      <span class="tabbar-label">Más</span>
+    </button>
+  </nav>
 
   <!-- Acción flotante: el gesto más común vive a un tap, en cualquier pestaña -->
   <div class="fab-wrap" id="fab-wrap">

@@ -1160,7 +1160,7 @@ function jumpToBills() {
 }
 
 function jumpToChat() {
-  document.querySelector('.tab[data-view="agent"]').click();
+  showView("agent");
   const input = $("#chat-input");
   input.value = "¿cómo vengo este mes?";
   input.focus();
@@ -1231,15 +1231,24 @@ function initFab() {
 // Tabs
 // ---------------------------------------------------------------------------
 
+// Muestra una vista y deja el destino marcado en las dos navs (la del header y
+// la barra inferior). Que el estado activo salga de `data-view` y no del botón
+// que se apretó es lo que impide que las dos navegaciones se desincronicen:
+// las dos leen del mismo lugar.
+function showView(view) {
+  $$("[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  $$("main section").forEach((sec) => {
+    sec.classList.toggle("hidden", sec.id !== `view-${view}`);
+  });
+  window.scrollTo({ top: 0 });
+}
+
 function initTabs() {
-  $$(".tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      $$(".tab").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      $$("main section").forEach((sec) => {
-        sec.classList.toggle("hidden", sec.id !== `view-${btn.dataset.view}`);
-      });
-    });
+  // Se ata a [data-view] y no a .tab: antes también se ataba a las pestañas del
+  // login y al botón "Salir", que no tienen data-view, así que un click ahí
+  // corría showView(undefined) y tapaba todas las secciones.
+  $$("[data-view]").forEach((btn) => {
+    btn.addEventListener("click", () => showView(btn.dataset.view));
   });
 }
 

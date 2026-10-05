@@ -88,16 +88,9 @@ body {
 
 .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
-/* Con 5 destinos, la nav ya no entra al lado del título en un teléfono de 360px:
-   el h1 tiene nowrap y el user-box no cede, así que flex la aplastaba a 15px de
-   ventana con 437px de contenido adentro. Pasa a su propia línea, a todo el
-   ancho, y scrollea horizontalmente si todavía no entra. Es una navegación
-   transitoria: en la fase 3 la reemplaza la barra inferior. */
-@media (max-width: 520px) {
-  .app-header-inner { flex-wrap: wrap; row-gap: 6px; }
-  .tabs { order: 3; flex: 1 0 100%; justify-content: space-between; }
-  .tabs .tab { padding: 10px 10px; font-size: 0.82rem; }
-}
+/* En el teléfono, esta nav se oculta: con cinco destinos arriba se comía media
+   pantalla y el contenido empezaba en el pliegue. La reemplaza la barra
+   inferior, más abajo. acá no hace falta nada hasta que aparezca en 521px. */
 .tab {
   appearance: none;
   border: none;
@@ -128,6 +121,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+/* En el teléfono, la barra de destinos y el FAB que flota sobre ella necesitan
+   los dos su espacio: los 96px de arriba sólo cubrían el FAB. Va después de
+   la regla base a propósito: a igual especificidad gana la última. */
+@media (max-width: 520px) {
+  .container { padding-bottom: calc(152px + env(safe-area-inset-bottom)); }
 }
 /* Cada vista es una columna: secciones/órdenes con aire entre bloques. */
 .container > section {
@@ -707,6 +706,68 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 }
 .sheet-title { font-size: 1rem; font-weight: 800; letter-spacing: -0.01em; }
 
+/* ---------- Barra inferior de destinos ---------- */
+/* Sólo en el teléfono. En escritorio la nav del header hace lo mismo y se ve
+   más natural arriba. La barra se dibuja con safe-area-inset porque en iPhone
+   el indicador de inicio se superpone si no. */
+.tabbar { display: none; }
+@media (max-width: 520px) {
+  .tabs { display: none; }
+  .app-header-inner { flex-wrap: nowrap; }
+
+  .tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    background: rgba(11, 14, 18, 0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabbar-item {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 8px 2px 7px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.18s var(--ease);
+  }
+  .tabbar-item.active { color: var(--mint); }
+  .tabbar-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 26px;
+    border-radius: 999px;
+    font-size: 1.02rem;
+    line-height: 1;
+    transition: background 0.18s var(--ease);
+  }
+  .tabbar-item.active .tabbar-icon { background: var(--mint-soft); }
+  /* El "más" no es emoji: "⋯" es un carácter, no un glifo de color, y se ve
+     igual en cualquier teléfono. */
+  .tabbar-icon-more { font-size: 1.1rem; letter-spacing: 1px; color: currentColor; }
+  .tabbar-label {
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+}
+
 /* ---------- FAB (acción flotante, disponible en todas las pestañas) ---------- */
 .fab-wrap {
   position: fixed;
@@ -717,6 +778,12 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   flex-direction: column-reverse;
   align-items: flex-end;
   gap: 12px;
+}
+/* En el teléfono el FAB flota sobre la barra de destinos, no sobre el borde
+   de la pantalla: si no, tapa la última etiqueta. 58px de botón + 14px de aire
+   + 61px de barra. */
+@media (max-width: 520px) {
+  .fab-wrap { bottom: calc(75px + env(safe-area-inset-bottom)); }
 }
 .fab {
   width: 58px;

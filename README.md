@@ -289,6 +289,31 @@ lugar: nada queda escondido sin salida.
 card "Ingresos del mes" se movieron a **Más**; el feed se movió a
 **Movimientos**. Las ocho funciones de render de `static/app.js` siguen igual.
 
+### La barra de destinos
+
+En el teléfono, los cinco destinos viven en una barra fija abajo
+(`#main-tabbar`), no en el header. Con cinco pestañas arriba, la nav se comía
+media pantalla y el contenido empezaba en el pliegue; abajo queda al alcance del
+pulgar y siempre visible. En escritorio (≥521px) la barra se oculta y sigue
+mandando la nav del header, que es donde se la espera.
+
+Las dos navegaciones comparten `data-view` y ninguna tiene estado propio: el
+handler es `showView(view)` en `static/app.js`, que marca el destino en **todas**
+las navs que lo tienen. Por eso no pueden desincronizarse.
+
+Dos detalles de la barra:
+
+- El botón de agregar **no** va en la barra. Es el FAB, que flota 75px arriba de
+  ella (`bottom: calc(75px + env(safe-area-inset-bottom))`). Si se apoyara en el
+  borde de la pantalla taparía la última etiqueta.
+- `.container` reserva `padding-bottom: calc(152px + env(safe-area-inset-bottom))`
+  en móvil: los 96px base cubrían el FAB solo, no el FAB más la barra.
+
+`initTabs()` se ata a `[data-view]` y no a `.tab`. Antes se ataba a toda clase
+`.tab`, incluidas las pestañas del login y el botón "Salir", que no tienen
+`data-view`: un click ahí corría la vista con `undefined` y tapaba todas las
+secciones. No se notaba porque "Salir" además cierra sesión.
+
 ## Usuarios y autenticación
 
 Cada usuario ve **solo sus datos**: registro con `POST /api/auth/register`
