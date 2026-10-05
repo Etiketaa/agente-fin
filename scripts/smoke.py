@@ -139,6 +139,58 @@ class Cleanup:
                   f"{len(self.bills)} vencimientos y {len(self.accounts)} billeteras borrados.")
 
 
+# Nombres fijos que usa el smoke para crear objetivos, presupuestos y
+# vencimientos. Los nombres de objetivo son únicos por usuario, así que un
+# "Colecta smoke" de una corrida interrumpida hace que el alta de hoy responda
+# 409 y el script muera a mitad de camino.
+HUERFANOS = {
+    "goals": {"Fondo smoke", "Colecta smoke"},
+    "budgets": {"Ocio"},
+    "bills": {"Alquiler vencido smoke", "Tarjeta smoke"},
+}
+
+
+def limpiar_huerfanos() -> None:
+    """Borra lo que una corrida anterior dejó sin limpiar.
+
+    Sin esto el smoke no es reentrante: se lo puede cortar (un timeout, un Ctrl-C)
+    y la corrida siguiente muere en el primer 409 por nombre repetido. Va al
+    principio y no sólo para los nombres: primero los movimientos, porque un
+    objetivo con movimientos asignados no se puede borrar (409), y sus
+    movimientos quedan en un período viejo que tampoco lo cubre la limpieza final.
+    """
+    borrados = 0
+    for t in req("GET", "/api/transactions?limite=500"):
+        try:
+            req("DELETE", f"/api/transactions/{t['id']}")
+            borrados += 1
+        except Exception:
+            pass
+    for g in req("GET", "/api/goals"):
+        if g["name"] in HUERFANOS["goals"]:
+            try:
+                req("DELETE", f"/api/goals/{g['id']}")
+                borrados += 1
+            except Exception:
+                pass
+    for b in req("GET", "/api/budgets"):
+        if b["category"] in HUERFANOS["budgets"]:
+            try:
+                req("DELETE", f"/api/budgets/{b['id']}")
+                borrados += 1
+            except Exception:
+                pass
+    for b in req("GET", "/api/bills"):
+        if b["description"] in HUERFANOS["bills"]:
+            try:
+                req("DELETE", f"/api/bills/{b['id']}")
+                borrados += 1
+            except Exception:
+                pass
+    if borrados:
+        print(f"\n(huerfanos de una corrida anterior borrados: {borrados})")
+
+
 def main():
     c = Cleanup()
     try:
@@ -198,6 +250,8 @@ def _run(c: Cleanup):
     global _TOKEN
     _TOKEN = tok_a
 
+    limpiar_huerfanos()
+
     # Aislamiento: lo que crea A no lo ve B, ni siquiera adivinando el ID.
     ta = req("POST", "/api/transactions",
              {"type": "expense", "amount": 1111, "category": "Motos"})
@@ -238,6 +292,12 @@ def _run(c: Cleanup):
     check("hay ingresos y gastos", s["total_income"] > 0 and s["total_expense"] > 0)
 
     print("\n[ingresos con procedencia]")
+    # El subtotal por procedencia se compara contra una línea de partida, no
+    # contra cero: /api/income suma todo el mes, así que un ingreso "Cliente X"
+    # de una corrida anterior (por ejemplo una interrumpida, que no llega a la
+    # limpieza) hace que el total no sea la suma de los dos cobros de hoy.
+    base_x = next((f["total_cents"] for f in req("GET", "/api/income")["by_source"]
+                   if f["source"] == "Cliente X"), 0)
     inc1 = req("POST", "/api/transactions", {
         "type": "income", "amount": 45000, "category": "Freelance",
         "source": "Cliente X"})
@@ -256,7 +316,8 @@ def _run(c: Cleanup):
     check("income cuenta los ingresos del mes", inc["count"] >= 2)
     fuente_x = next((f for f in inc["by_source"] if f["source"] == "Cliente X"), None)
     check("subtotal por procedencia suma los dos cobros",
-          fuente_x is not None and fuente_x["total_cents"] == inc1["amount_cents"] + inc2["amount_cents"])
+          fuente_x is not None
+          and fuente_x["total_cents"] == base_x + inc1["amount_cents"] + inc2["amount_cents"])
     check("la vista diaria contiene días con items",
           bool(inc["days"]) and len(inc["days"][0]["items"]) > 0)
     expect_error("mes de ingresos mal formado", lambda: req("GET", "/api/income?mes=no-fecha"), 400)

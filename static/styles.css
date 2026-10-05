@@ -88,6 +88,16 @@ body {
 
 .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
+/* Con 5 destinos, la nav ya no entra al lado del título en un teléfono de 360px:
+   el h1 tiene nowrap y el user-box no cede, así que flex la aplastaba a 15px de
+   ventana con 437px de contenido adentro. Pasa a su propia línea, a todo el
+   ancho, y scrollea horizontalmente si todavía no entra. Es una navegación
+   transitoria: en la fase 3 la reemplaza la barra inferior. */
+@media (max-width: 520px) {
+  .app-header-inner { flex-wrap: wrap; row-gap: 6px; }
+  .tabs { order: 3; flex: 1 0 100%; justify-content: space-between; }
+  .tabs .tab { padding: 10px 10px; font-size: 0.82rem; }
+}
 .tab {
   appearance: none;
   border: none;
@@ -196,6 +206,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .cards { display: grid; grid-template-columns: 1fr; gap: 14px; }
 @media (min-width: 720px) {
   .cards { grid-template-columns: repeat(4, 1fr); }
+  .cards.three { grid-template-columns: repeat(3, 1fr); }
   .card.summary.hero { grid-column: 1 / -1; }
 }
 
@@ -256,6 +267,16 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+/* El período que está usando el hero. El selector vive en Movimientos, así
+   que sin esto el número de Inicio cambiaría en silencio desde otra pantalla.
+   Va en minúscula adentro de una etiqueta en mayúsculas: es un dato, no un
+   título, y en mayúsculas parece otro nivel de jerarquía del que tiene. */
+.hero-period {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--faint);
 }
 /* Por debajo del resultado: el disponible es el número que se consulta. */
 .hero-disponible-valor {
@@ -466,6 +487,17 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   gap: 12px;
   margin-bottom: 12px;
 }
+/* En un teléfono, una fila con nombre y botones no entra en una línea: la
+   columna de texto quedaba en 58px y el nombre partía en tres renglones, con
+   la card de pagos medía más de dos pantallas. Con wrap, el texto toma el
+   ancho completo y las acciones bajan a su propia línea, repartidas. El
+   basis de 140px es lo que decide el corte: si al lado no hay lugar para 140,
+   flexbox prefiere quebrar antes que aplastar. */
+@media (max-width: 520px) {
+  .goal-head { flex-wrap: wrap; }
+  .goal-head > :first-child { flex: 1 1 140px; min-width: 0; }
+  .bill-actions { flex: 1 1 100%; justify-content: space-between; }
+}
 .goal-name { font-weight: 800; font-size: 0.96rem; letter-spacing: -0.01em; }
 .goal-track { height: 6px; margin-bottom: 8px; }
 .goal-card.en_curso .bar-fill, .budget-card.ok .bar-fill { background: var(--mint); }
@@ -474,6 +506,9 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .goal-card.alcanzado .bar-fill { background: var(--income); }
 .goal-extra { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
 .bill-actions { display: flex; align-items: center; gap: 8px; }
+/* "Ver los N pagos más": mismo ancho que las filas, para que se lea como parte
+   de la lista y no como un botón suelto al final. */
+.bills-mas { width: 100%; margin-top: 2px; }
 
 /* ---------- Billeteras (patrimonio) ---------- */
 /* El total manda y las filas son el detalle: mismo patrón que una app de banco,

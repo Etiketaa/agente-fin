@@ -20,10 +20,12 @@
   <header class="app-header">
     <div class="app-header-inner">
       <h1>💰 Finanzas Personales</h1>
-      <nav class="tabs">
-        <button class="tab active" data-view="panel">Panel</button>
-        <button class="tab" data-view="metas">Metas 🎯</button>
-        <button class="tab" data-view="agent">Agente 🤖</button>
+      <nav class="tabs" id="main-nav">
+        <button class="tab active" data-view="panel">Inicio</button>
+        <button class="tab" data-view="movimientos">Movimientos</button>
+        <button class="tab" data-view="metas">Metas</button>
+        <button class="tab" data-view="agent">Agente</button>
+        <button class="tab" data-view="mas">Más</button>
       </nav>
       <div class="user-box hidden" id="user-box">
         <span id="user-name" class="user-name"></span>
@@ -57,24 +59,16 @@
   </div>
 
   <main class="container" id="main-container">
-    <!-- ===================== PANEL ===================== -->
+    <!-- ===================== INICIO =====================
+         Responde una sola pregunta: "¿cómo estoy?". En este orden:
+         cuánto tengo libre → qué tengo que pagar → voy bien con el tope →
+         en qué se me va la plata → dónde está. -->
     <section id="view-panel">
-      <div class="toolbar">
-        <label class="period-label">Período
-          <select id="period-select">
-            <option value="mes">Este mes</option>
-            <option value="anio">Este año</option>
-            <option value="todo">Todo</option>
-          </select>
-        </label>
-        <span id="period-info" class="muted"></span>
-      </div>
-
-      <div id="budget-alerts" class="hidden"></div>
-
       <div class="cards" id="summary-cards">
         <div class="card summary hero">
-          <div class="card-label">Resultado del período</div>
+          <div class="card-label">
+            Resultado del período <span class="hero-period" id="hero-period"></span>
+          </div>
           <div class="card-value" id="sum-balance">—</div>
           <div class="hero-flujo">
             <span class="hero-in">+<span id="sum-income-hero">—</span></span>
@@ -91,18 +85,55 @@
             <span class="hero-vencido hidden" id="hero-vencido"></span>
           </div>
         </div>
-        <div class="card summary income">
-          <div class="card-label">Ingresos</div>
-          <div class="card-value" id="sum-income">—</div>
+      </div>
+
+      <!-- Abajo del hero, no arriba: el hero ya dice en rojo cuánto venció sin
+           pagar, así que la urgencia no se pierde. Lo que el banner agrega son
+           los presupuestos excedidos, las metas y las anomalías, que el hero no
+           muestra. -->
+      <div id="budget-alerts" class="hidden"></div>
+
+      <!-- Lo primero después del saldo: lo que hay que pagar. Si algo está
+           vencido, el hero ya lo marcó en rojo; acá está el detalle y el
+           botón de pagar. -->
+      <div class="card">
+        <div class="card-head">
+          <div class="goal-head">
+            <div>
+              <h2>Pagos que tenés que hacer</h2>
+              <p class="muted small">
+                Tarjeta, alquiler, seguro. Al pagar se genera el gasto y el mes
+                siguiente se crea solo.
+              </p>
+            </div>
+            <button class="btn primary small-btn" id="btn-nuevo-bill" type="button">+ Agregar</button>
+          </div>
         </div>
-        <div class="card summary expense">
-          <div class="card-label">Gastos</div>
-          <div class="card-value" id="sum-expense">—</div>
+        <div id="bills-list" class="bill-list"></div>
+      </div>
+
+      <!-- El tope mensual es una pregunta de Inicio, no de configuración: se
+           consulta acá y se cambia en Metas. Por eso esta lista no tiene el
+           botón de borrar: eliminar un presupuesto desde la pantalla donde lo
+           mirás es destructivo fuera de contexto. -->
+      <div class="card">
+        <div class="card-head">
+          <div class="goal-head">
+            <div>
+              <h2>Presupuesto del mes</h2>
+              <p class="muted small">
+                Cuánto gastaste de lo que te pusiste como tope. Para cambiar o quitar
+                un presupuesto, andá a Metas.
+              </p>
+            </div>
+          </div>
         </div>
-        <div class="card summary">
-          <div class="card-label">Movimientos</div>
-          <div class="card-value" id="sum-count">—</div>
-        </div>
+        <div id="budgets-strip" class="budget-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>Gastos por categoría</h2>
+        <div id="category-bars"></div>
       </div>
 
       <div class="card">
@@ -126,44 +157,61 @@
         <p class="muted small patrimonio-aviso" id="patrimonio-aviso"></p>
         <div id="accounts-list" class="accounts-list"></div>
       </div>
+    </section>
 
-      <div class="grid">
-        <div class="card">
-          <h2>Gastos por categoría</h2>
-          <div id="category-bars"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <h2>Ingresos del mes</h2>
-          <p class="muted small">Lo que entró en el mes actual, por procedencia y por día.
-            De cada cobro: cargá un ingreso con su «Procedencia» en el formulario de arriba.</p>
-        </div>
-        <div class="income-head" id="income-head"></div>
-        <div id="income-sources" class="income-sources"></div>
-        <div id="income-days" class="income-days"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <div class="goal-head">
-            <div>
-              <h2>Vencimientos</h2>
-              <p class="muted small">
-                Pagos futuros con fecha (tarjeta, alquiler, seguro...). Al pagar se
-                genera el gasto y, si es mensual, se crea el siguiente automáticamente.
-              </p>
-            </div>
-            <button class="btn primary small-btn" id="btn-nuevo-bill" type="button">+ Agregar</button>
-          </div>
-        </div>
-        <div id="bills-list" class="bill-list"></div>
+    <!-- ===================== MOVIMIENTOS =====================
+         El feed con su período. El selector vive acá y no en Inicio porque
+         el patrimonio es un punto en el tiempo, no un período: el hero de
+         Inicio muestra el período que está vigente. -->
+    <section id="view-movimientos" class="hidden">
+      <div class="toolbar">
+        <label class="period-label">Período
+          <select id="period-select">
+            <option value="mes">Este mes</option>
+            <option value="anio">Este año</option>
+            <option value="todo">Todo</option>
+          </select>
+        </label>
+        <span id="period-info" class="muted"></span>
       </div>
 
       <div class="card">
         <h2>Movimientos</h2>
         <div id="tx-feed" class="tx-feed"></div>
+      </div>
+    </section>
+
+    <!-- ===================== MÁS =====================
+         Lo que está pero no se consulta todos los días. Nada se borró: las
+         tres cards chicas ya no aportan en Inicio porque el hero muestra
+         ingresos y gastos en la línea de flujo, y "Ingresos del mes" es un
+         desglose por procedencia que se mira una vez al mes. -->
+    <section id="view-mas" class="hidden">
+      <div class="cards three">
+        <div class="card summary income">
+          <div class="card-label">Ingresos del período</div>
+          <div class="card-value" id="sum-income">—</div>
+        </div>
+        <div class="card summary expense">
+          <div class="card-label">Gastos del período</div>
+          <div class="card-value" id="sum-expense">—</div>
+        </div>
+        <div class="card summary">
+          <div class="card-label">Movimientos</div>
+          <div class="card-value" id="sum-count">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Ingresos del mes, en detalle</h2>
+          <p class="muted small">Lo que entró en el mes actual, por procedencia y por día.
+            De cada cobro: cargá un ingreso con su «Procedencia» en el formulario de
+            movimiento.</p>
+        </div>
+        <div class="income-head" id="income-head"></div>
+        <div id="income-sources" class="income-sources"></div>
+        <div id="income-days" class="income-days"></div>
       </div>
     </section>
 

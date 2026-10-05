@@ -58,6 +58,10 @@ y la confirmación de acciones sensibles:
 .venv/bin/python -m scripts.smoke
 ```
 
+Es **reentrante**: al arrancar borra lo que quedó de una corrida anterior
+(interrumpida, por ejemplo), así que se lo puede cortar y volver a correr sin que
+la siguiente muera en un 409 por nombre repetido.
+
 ## Cómo funciona el agente
 
 ```
@@ -238,7 +242,7 @@ Dos decisiones que conviene no romper:
   en una fecha. Filtrar el resumen por fechas no puede moverlas, y el smoke lo
   verifica.
 
-El hero del Panel muestra el resultado del período (un flujo: lo que entró
+El hero de Inicio muestra el resultado del período (un flujo: lo que entró
 menos lo que gastaste) separado del disponible real (un stock), con la línea de
 comprometido debajo. La etiqueta pasó de "Balance del período" a "Resultado del
 período" a propósito: "balance" mezclaba las dos cosas y se leía como "tengo
@@ -246,6 +250,44 @@ esta plata".
 
 El agente lo dice en la misma línea de `calcular_balance`: sin ella comparaba un
 gasto contra un número que todavía había que pagar.
+
+## Cómo está organizada la app (IA)
+
+Cinco destinos: **Inicio, Movimientos, Metas, Agente, Más**. La regla que los
+ordena es una sola: *lo que se consulta todos los días va arriba, lo que se mira
+una vez al mes baja*.
+
+**Inicio** responde una pregunta —"¿cómo estoy?"— y por eso tiene las cuatro
+cosas que se miran sin decidir nada, en este orden:
+
+1. El hero (resultado del período + disponible real).
+2. Pagos que tenés que hacer — con tope de 3 filas y "ver los N más".
+3. Presupuesto del mes, en modo consulta: **sin** botón de eliminar.
+4. Gastos por categoría.
+5. Billeteras.
+
+Tres decisiones que conviene no romper:
+
+- **"Gastos por categoría" se queda en Inicio.** Ilevarlo a Más dejaba a Inicio
+  sin contestar "¿en qué se me va la plata?", que es una pregunta diaria.
+- **El presupuesto aparece en Inicio sin el ✕.** Borrar un presupuesto desde la
+  pantalla donde lo estás mirando es destructivo fuera de contexto: el
+  borrado vive en Metas. Las dos pantallas comparten `budgetRowHtml(b, conBorrar)`
+  en `static/app.js`, así el texto, el ícono y la barra se escriben una sola vez
+  y no pueden mostrar números distintos.
+- **El selector de período se fue a Movimientos** (el patrimonio es un punto en
+  el tiempo, no un período), pero el hero también depende de él. Por eso el hero
+  muestra el período que está usando: si no, el número de Inicio cambiaría en
+  silencio desde otra pantalla.
+
+La lista de pagos se corta en 3 filas porque la card tiene que responder "¿qué
+pago ahora?" de un vistazo. Con 8 vencimientos, el scroll hasta "Gastos por
+categoría" era de tres pantallas. "Ver los N más" los muestra igual, en el
+lugar: nada queda escondido sin salida.
+
+**Nada se borró.** Las tres cards chicas (ingresos, gastos, movimientos) y la
+card "Ingresos del mes" se movieron a **Más**; el feed se movió a
+**Movimientos**. Las ocho funciones de render de `static/app.js` siguen igual.
 
 ## Usuarios y autenticación
 

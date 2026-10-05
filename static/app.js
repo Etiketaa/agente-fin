@@ -14,6 +14,7 @@ const state = {
   accounts: [],
   lastAccount: null, // última billetera usada: se pre-selecciona al registrar
   budgetMonth: currentMonth(),
+  billsVerTodos: false, // en Inicio solo se ven los 3 primeros pagos
   pending: null,
   chatMessages: [], // historial {role, content} enviado al backend
 };
@@ -362,6 +363,9 @@ async function renderSummary() {
   $("#sum-expense-hero").textContent = moneyFmt(s.total_expense);
   $("#sum-count").textContent = s.count;
   $("#period-info").textContent = `Período: ${s.period}`;
+  // El selector de período vive en Movimientos, así que el hero dice cuál está
+  // usando: si no, este número cambia en silencio desde otra pantalla.
+  $("#hero-period").textContent = s.period === "todo el historial" ? "(todo)" : `· ${s.period}`;
   renderDisponible(s);
 
   // Barras: gastos por categoría
@@ -691,42 +695,55 @@ async function loadBudgets() {
   // los presupuestos del mes en curso junto al resto de las alertas.
 }
 
+// Una fila de presupuesto, dos presentaciones: la de Inicio (consulta) y la de
+// Metas (consulta + eliminar). El texto, el ícono y la barra salen de acá una
+// sola vez, así las dos pantallas no pueden mostrar números distintos.
+function budgetRowHtml(b, conBorrar) {
+  const partes = [];
+  if (b.remaining_cents < 0) partes.push(`te pasaste por ${moneyFmt(Math.abs(b.remaining))}`);
+  else partes.push(`quedan ${moneyFmt(b.remaining)}`);
+  if (b.days_left) partes.push(`faltan ${b.days_left} días`);
+  if (b.projected_cents > b.limit_cents && b.status !== "excedido") {
+    partes.push(`a este ritmo terminás el mes en ${moneyFmt(b.projected)}`);
+  }
+  const icon = b.status === "excedido" ? "🔴" : b.status === "atencion" ? "🟡" : "🟢";
+  const borrar = conBorrar
+    ? `<button class="btn ghost small-btn" data-del-budget="${b.id}" title="Eliminar presupuesto">✕</button>`
+    : "";
+  return `
+    <div class="goal-head">
+      <div>
+        <div class="goal-name">${icon} ${esc(b.category)}</div>
+        <div class="muted small">${partes.map(esc).join(" · ")}</div>
+      </div>
+      ${borrar}
+    </div>
+    <div class="bar-track goal-track">
+      <div class="bar-fill" style="width:${Math.min(b.percent, 100)}%"></div>
+    </div>
+    <div class="bar-top">
+      <span class="num"><strong>${moneyFmt(b.spent)}</strong> de ${moneyFmt(b.limit)}</span>
+      <span class="muted">${pct(b.percent)}</span>
+    </div>`;
+}
+
 function renderBudgets(rows) {
-  const box = $("#budgets-list");
+  const lista = $("#budgets-list");
+  const strip = $("#budgets-strip");
   if (!rows.length) {
-    box.innerHTML = `<div class="no-data">No hay presupuestos cargados para este mes.</div>`;
+    const vacio = `<div class="no-data">No hay presupuestos cargados para este mes.</div>`;
+    lista.innerHTML = vacio;
+    strip.innerHTML = vacio;
     return;
   }
-  box.innerHTML = "";
-  for (const b of rows) {
-    const el = document.createElement("div");
-    el.className = `budget-card ${b.status}`;
-    const partes = [];
-    if (b.remaining_cents < 0) partes.push(`te pasaste por ${moneyFmt(Math.abs(b.remaining))}`);
-    else partes.push(`quedan ${moneyFmt(b.remaining)}`);
-    if (b.days_left) partes.push(`faltan ${b.days_left} días`);
-    if (b.projected_cents > b.limit_cents && b.status !== "excedido") {
-      partes.push(`a este ritmo terminás el mes en ${moneyFmt(b.projected)}`);
-    }
-    const icon = b.status === "excedido" ? "🔴" : b.status === "atencion" ? "🟡" : "🟢";
-    el.innerHTML = `
-      <div class="goal-head">
-        <div>
-          <div class="goal-name">${icon} ${esc(b.category)}</div>
-          <div class="muted small">${partes.map(esc).join(" · ")}</div>
-        </div>
-        <button class="btn ghost small-btn" data-del-budget="${b.id}" title="Eliminar presupuesto">✕</button>
-      </div>
-      <div class="bar-track goal-track">
-        <div class="bar-fill" style="width:${Math.min(b.percent, 100)}%"></div>
-      </div>
-      <div class="bar-top">
-        <span class="num"><strong>${moneyFmt(b.spent)}</strong> de ${moneyFmt(b.limit)}</span>
-        <span class="muted">${pct(b.percent)}</span>
-      </div>`;
-    box.appendChild(el);
-  }
-  box.querySelectorAll("[data-del-budget]").forEach((btn) => {
+  lista.innerHTML = rows
+    .map((b) => `<div class="budget-card ${b.status}">${budgetRowHtml(b, true)}</div>`)
+    .join("");
+  strip.innerHTML = rows
+    .map((b) => `<div class="budget-card ${b.status}">${budgetRowHtml(b, false)}</div>`)
+    .join("");
+
+  lista.querySelectorAll("[data-del-budget]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       if (!confirm(`¿Eliminar el presupuesto #${btn.dataset.delBudget}?`)) return;
       try {
@@ -793,8 +810,18 @@ async function loadBills() {
     box.innerHTML = `<div class="no-data">Sin vencimientos pendientes. Agregá el primero arriba.</div>`;
     return;
   }
+
+  // En Inicio se muestran solo los primeros: la card tiene que responder
+  // "¿qué pago ahora?" de un vistazo, no ser la lista completa. Con 8
+  // vencimientos, el scroll hasta "Gastos por categoría" era de tres pantallas.
+  // "Ver todos" los muestra igual, acá mismo: nada queda escondido sin salida.
+  const LIMITE = 3;
+  const verTodos = state.billsVerTodos;
+  const visibles = verTodos ? rows : rows.slice(0, LIMITE);
+  const quedan = rows.length - visibles.length;
+
   box.innerHTML = "";
-  for (const b of rows) {
+  for (const b of visibles) {
     const el = document.createElement("div");
     el.className = `bill-card ${b.state}`;
     const icon = b.state === "vencido" ? "🔴" : b.state === "proximo" ? "🟡" : "⚪";
@@ -813,6 +840,22 @@ async function loadBills() {
       </div>`;
     box.appendChild(el);
   }
+
+  if (quedan > 0 || verTodos) {
+    const mas = document.createElement("button");
+    mas.type = "button";
+    mas.className = "btn ghost bills-mas";
+    mas.id = "bills-mas";
+    mas.textContent = verTodos
+      ? "Ver menos"
+      : `Ver los ${rows.length - LIMITE} pago${rows.length - LIMITE === 1 ? "" : "s"} más`;
+    mas.addEventListener("click", async () => {
+      state.billsVerTodos = !state.billsVerTodos;
+      await loadBills();
+    });
+    box.appendChild(mas);
+  }
+
   box.querySelectorAll("[data-pay-bill]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       if (!confirm(`¿Marcar como pagado y generar el gasto?`)) return;
