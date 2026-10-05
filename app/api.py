@@ -5,7 +5,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from . import analytics, auth as auth_helpers
@@ -14,8 +14,13 @@ from .agent.provider import ProviderError, get_provider
 from .agent.tools import cents_to_money, money_to_cents
 from .config import get_settings
 from .db import get_db
-from .models import Bill, Budget, Category, SavingsGoal, Transaction, User, UserSession
+from .models import Account, Bill, Budget, Category, SavingsGoal, Transaction, User, UserSession
+from .seed import DEFAULT_ACCOUNT_NAME, default_account
 from .schemas import (
+    AccountCreate,
+    AccountsOut,
+    AccountUpdate,
+    AccountOut,
     AgentChatRequest,
     AgentConfirmRequest,
     AgentResponse,
@@ -83,6 +88,31 @@ def _find_category(db: Session, user_id: int, name: str, kind: str | None = None
     return cat
 
 
+def _find_account(db: Session, user_id: int, name: str | None) -> Account:
+    """Resuelve la billetera de un movimiento.
+
+    Sin nombre (o vacío) cae en «General»: el patrimonio total no puede perder
+    plata, así que ningún movimiento queda fuera de una billetera. Si el nombre
+    no existe es un error del cliente (400), no un silencio.
+    """
+    if name and name.strip() and name.strip() != DEFAULT_ACCOUNT_NAME:
+        acc = db.scalar(
+            select(Account).where(
+                Account.user_id == user_id,
+                func.lower(Account.name) == name.strip().lower(),
+            )
+        )
+        if acc is None:
+            nombres = ", ".join(
+                a.name for a in db.scalars(
+                    select(Account).where(Account.user_id == user_id).order_by(Account.name)
+                ).all()
+            )
+            raise HTTPException(400, f"No existe la billetera '{name}'. Tenés: {nombres}")
+        return acc
+    return default_account(db, user_id)
+
+
 def _owned(db: Session, model, oid: int, user_id: int, label: str):
     """db.get + chequeo de dueño. Si no es tuyo, 404 (no 403): no filtramos
     ni siquiera la existencia de registros ajenos."""
@@ -103,6 +133,7 @@ def _to_out(t: Transaction) -> TransactionOut:
         date=t.date,
         goal=t.goal.name if t.goal else None,
         source=t.source,
+        cuenta=t.account.name if t.account else None,
     )
 
 
@@ -444,6 +475,7 @@ def pay_bill(bid: int, user: User = Depends(get_current_user), db: Session = Dep
         category_id=bill.category_id,
         description=f"Pago: {bill.description}",
         date=date.today(),
+        cuenta_id=_find_account(db, user.id, None).id,
     )
     db.add(t)
     bill.paid_at = date.today()
@@ -485,6 +517,174 @@ def pay_bill(bid: int, user: User = Depends(get_current_user), db: Session = Dep
 def delete_bill(bid: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     bill = _owned(db, Bill, bid, user.id, "el vencimiento")
     db.delete(bill)
+    db.commit()
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Billeteras (patrimonio: la plata que hay hoy, no la que pasó)
+# ---------------------------------------------------------------------------
+
+def _account_out(row: analytics.AccountRow) -> AccountOut:
+    return AccountOut(
+        id=row.id,
+        name=row.name,
+        kind=row.kind,
+        es_default=row.name == DEFAULT_ACCOUNT_NAME,
+        apertura=cents_to_money(row.apertura_cents),
+        apertura_cents=row.apertura_cents,
+        balance=cents_to_money(row.balance_cents),
+        balance_cents=row.balance_cents,
+        movimientos=row.movimientos,
+        ultimo_movimiento=(
+            row.ultimo_movimiento.isoformat() if row.ultimo_movimiento else None
+        ),
+        notes=row.notes,
+        updated_at=row.updated_at.isoformat() if row.updated_at else None,
+    )
+
+
+def _account_row(db: Session, user_id: int, aid: int) -> analytics.AccountRow:
+    for r in analytics.account_rows(db, user_id):
+        if r.id == aid:
+            return r
+    raise HTTPException(404, f"No existe la billetera #{aid}")
+
+
+@router.get("/accounts", response_model=AccountsOut)
+def list_accounts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Billeteras + patrimonio total.
+
+    El saldo de cada una es derivado (apertura + movimientos) y el total sale de
+    la misma función que consume el agente: el número de la pantalla y el del
+    chat no pueden divergir.
+    """
+    rows = analytics.account_rows(db, user.id)
+    total = analytics.total_cents(db, user.id)
+    return AccountsOut(
+        accounts=[_account_out(r) for r in rows],
+        total=cents_to_money(total),
+        total_cents=total,
+        count=len(rows),
+    )
+
+
+@router.post("/accounts", response_model=AccountOut, status_code=201)
+def create_account(payload: AccountCreate, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Crea una billetera. `saldo` es el saldo REAL que tiene hoy: queda como
+    apertura y de ahí en adelante se mueve sola con cada movimiento."""
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(400, "El nombre de la billetera no puede estar vacío.")
+    if name.lower() == DEFAULT_ACCOUNT_NAME.lower():
+        raise HTTPException(
+            409, f"«{DEFAULT_ACCOUNT_NAME}» ya existe: es la billetera donde caen los "
+                 "movimientos sin asignar."
+        )
+    existe = db.scalar(
+        select(Account).where(
+            Account.user_id == user.id, func.lower(Account.name) == name.lower()
+        )
+    )
+    if existe:
+        raise HTTPException(409, f"Ya tenés una billetera llamada '{name}'.")
+    acc = Account(
+        user_id=user.id,
+        name=name,
+        kind=payload.kind,
+        apertura_cents=money_to_cents(payload.saldo),
+        notes=payload.notes,
+    )
+    db.add(acc)
+    db.commit()
+    db.refresh(acc)
+    return _account_out(_account_row(db, user.id, acc.id))
+
+
+@router.patch("/accounts/{aid}", response_model=AccountOut)
+def update_account(aid: int, payload: AccountUpdate, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """Actualización parcial. Mandar `saldo` es una CONCILIACIÓN: el saldo
+    derivado pasa a ser exactamente el número real que declarás (no se borra
+    historia ni se inventan movimientos)."""
+    acc = _owned(db, Account, aid, user.id, "la billetera")
+    data = payload.model_dump(exclude_none=True)
+    if "name" in data:
+        nombre = str(data["name"]).strip()
+        if not nombre:
+            raise HTTPException(400, "El nombre de la billetera no puede estar vacío.")
+        if nombre.lower() == DEFAULT_ACCOUNT_NAME.lower():
+            raise HTTPException(
+                409, f"«{DEFAULT_ACCOUNT_NAME}» ya existe: no se puede usar ese nombre."
+            )
+        # Case-insensitive como en el alta: si no, podrías tener «Mercado Pago» y
+        # «mercado pago» y después el agente no sabría a cuál moverse.
+        choque = db.scalar(
+            select(Account).where(
+                Account.user_id == user.id,
+                func.lower(Account.name) == nombre.lower(),
+                Account.id != aid,
+            )
+        )
+        if choque:
+            raise HTTPException(409, f"Ya tenés una billetera llamada '{nombre}'.")
+        acc.name = nombre
+    if "kind" in data:
+        acc.kind = data["kind"]
+    if "notes" in data:
+        acc.notes = data["notes"]
+    if "saldo" in data:
+        analytics.reconcile_account(db, acc, money_to_cents(float(data["saldo"])), user.id)
+    else:
+        db.commit()
+    db.refresh(acc)
+    return _account_out(_account_row(db, user.id, aid))
+
+
+@router.delete("/accounts/{aid}", status_code=204)
+def delete_account(
+    aid: int,
+    reasignar: int = 0,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Borra la billetera.
+
+    «General» no se puede borrar: es la que recibe todo movimiento sin asignar, y
+    sin ella el patrimonio dejaría de contar plata.
+
+    Con movimientos asignado se niega (409): sin `reasignar=1` esos movimientos
+    quedarían sin billetera y saldrían del patrimonio. Con `reasignar=1` pasan a
+    "General", que también es la billetera por defecto del usuario.
+    """
+    acc = _owned(db, Account, aid, user.id, "la billetera")
+    if acc.name == DEFAULT_ACCOUNT_NAME:
+        raise HTTPException(
+            409, f"«{DEFAULT_ACCOUNT_NAME}» no se puede borrar: recibe los movimientos sin asignar."
+        )
+    cuantos = int(
+        db.scalar(
+            select(func.count(Transaction.id)).where(
+                Transaction.user_id == user.id, Transaction.cuenta_id == aid
+            )
+        )
+        or 0
+    )
+    if cuantos and not reasignar:
+        raise HTTPException(
+            409,
+            f"La billetera «{acc.name}» tiene {cuantos} movimiento(s). "
+            "Reasignalos o volvé a intentar con reasignar=1 para que pasen a «General».",
+        )
+    if cuantos:
+        general = default_account(db, user.id)
+        db.execute(
+            update(Transaction)
+            .where(Transaction.user_id == user.id, Transaction.cuenta_id == aid)
+            .values(cuenta_id=general.id)
+        )
+    db.delete(acc)
     db.commit()
     return Response(status_code=204)
 
@@ -537,6 +737,10 @@ def create_transaction(payload: TransactionCreate, user: User = Depends(get_curr
     if payload.type != "income":
         source = None
 
+    # La billetera nunca queda sin resolver: sin elección explícita, el
+    # movimiento va a «General» para que el patrimonio no pierda plata.
+    cuenta = _find_account(db, user.id, payload.cuenta)
+
     t = Transaction(
         user_id=user.id,
         type=payload.type,
@@ -546,6 +750,7 @@ def create_transaction(payload: TransactionCreate, user: User = Depends(get_curr
         description=payload.description.strip(),
         date=payload.date or date.today(),
         source=source,
+        cuenta_id=cuenta.id,
     )
     db.add(t)
     db.commit()

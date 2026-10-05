@@ -319,6 +319,12 @@ def import_csv(db: Session, user_id: int, path: str,
     errors: list[str] = []
     seen_hashes = set()
 
+    # Todo lo importado se imputa a «General»: el CSV no dice de qué billetera
+    # salió cada línea, y un movimiento sin billetera saldría del patrimonio.
+    from .seed import default_account
+
+    general = default_account(db, user_id)
+
     # Cargar hashes existentes (solo los del usuario: el dedup no cruza usuarios)
     existing_hashes = {
         h
@@ -381,6 +387,9 @@ def import_csv(db: Session, user_id: int, path: str,
                 date=dt,
                 category_id=cat_id,
                 import_hash=h,
+                # Lo importado va a «General»: es un solo archivo y no sabemos
+                # de qué billetera salió cada línea (ver `seed.default_account`).
+                cuenta_id=general.id,
             )
             db.add(tx)
             created += 1
