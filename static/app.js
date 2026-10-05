@@ -17,6 +17,7 @@ const state = {
   billsVerTodos: false, // en Inicio solo se ven los 3 primeros pagos
   pending: null,
   chatMessages: [], // historial {role, content} enviado al backend
+  incomeSources: [], // procedencias del mes, para los chips del formulario
 };
 
 // ---------------------------------------------------------------------------
@@ -140,22 +141,90 @@ async function loadCategories() {
 // El selector de categoría depende del tipo elegido: una categoría de gasto no
 // puede ser la de un ingreso. Antes se llenaba solo con gastos, así que elegir
 // "Ingreso" y guardar siempre terminaba en un 400.
+// Cambia tipo (gasto/ingreso) y redibuja los chips de categoría. El valor
+// elegido vive en #tx-category (campo oculto): los chips son sólo la forma de
+// elegirlo, para que sea un tap en vez de abrir un select y scrollear el
+// picker nativo del teléfono.
 function syncCategoryOptions() {
-  const select = $("#tx-category");
-  const prev = select.value;
   const kind = $("#tx-type").value;
-  select.innerHTML = "";
-  for (const c of state.categories) {
-    if (c.kind !== kind) continue;
-    const opt = document.createElement("option");
-    opt.value = c.name;
-    opt.textContent = c.name;
-    select.appendChild(opt);
+  const cont = $("#tx-category-chips");
+  const propias = state.categories.filter((c) => c.kind === kind);
+  const prev = $("#tx-category").value;
+
+  cont.innerHTML = "";
+  for (const c of propias) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.textContent = c.name;
+    chip.setAttribute("role", "radio");
+    chip.setAttribute("aria-checked", "false");
+    chip.addEventListener("click", () => {
+      $("#tx-category").value = c.name;
+      cont.querySelectorAll(".chip").forEach((x) => {
+        const on = x === chip;
+        x.classList.toggle("active", on);
+        x.setAttribute("aria-checked", on ? "true" : "false");
+      });
+    });
+    cont.appendChild(chip);
   }
-  if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+  // Antes el select arrancaba con la primera categoría; los chips arrancan con
+  // la primera marcada, que es lo mismo pero a la vista.
+  marcarChip($("#tx-category"), propias.some((c) => c.name === prev) ? prev : propias[0]?.name);
 
   // La procedencia solo tiene sentido en ingresos.
-  $("#tx-source-wrap").classList.toggle("hidden", kind !== "income");
+  const esIngreso = kind === "income";
+  $("#tx-source-wrap").classList.toggle("hidden", !esIngreso);
+  if (esIngreso) renderSourceChips();
+  syncSubmitLabel();
+}
+
+function marcarChip(hidden, nombre) {
+  const cont = $("#tx-category-chips");
+  hidden.value = nombre || "";
+  cont.querySelectorAll(".chip").forEach((x) => {
+    const on = x.textContent === nombre;
+    x.classList.toggle("active", on);
+    x.setAttribute("aria-checked", on ? "true" : "false");
+  });
+}
+
+function syncSubmitLabel() {
+  const b = $("#tx-submit");
+  const titulo = $("#sheet-movimiento-title");
+  const esIngreso = $("#tx-type").value === "income";
+  if (b) b.textContent = esIngreso ? "Registrar cobro" : "Registrar gasto";
+  if (titulo) titulo.textContent = esIngreso ? "Registrar cobro" : "Registrar gasto";
+}
+
+// Chips de procedencia con lo que ya entró este mes. Vienen de
+// GET /api/income, que el panel ya pide: no hay endpoint nuevo ni una request
+// extra. El input de texto al lado sigue aceptando cualquier otra.
+function renderSourceChips() {
+  const cont = $("#tx-source-chips");
+  if (!cont) return;
+  const fuentes = (state.incomeSources || []).slice(0, 6);
+  cont.innerHTML = "";
+  if (!fuentes.length) {
+    cont.classList.add("hidden");
+    return;
+  }
+  cont.classList.remove("hidden");
+  const input = $("#tx-source");
+  for (const f of fuentes) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.textContent = f.source;
+    chip.title = `${moneyFmt(f.total)} en ${f.count} cobro(s) este mes`;
+    chip.addEventListener("click", () => {
+      input.value = input.value === f.source ? "" : f.source;
+      cont.querySelectorAll(".chip").forEach((x) => x.classList.toggle("active", x === chip && input.value));
+    });
+    if (input.value === f.source) chip.classList.add("active");
+    cont.appendChild(chip);
+  }
 }
 
 function syncBudgetCategories() {
@@ -530,6 +599,9 @@ async function loadAlerts() {
 // Ingresos del mes actual: total, por procedencia y por día.
 async function renderIncome() {
   const data = await api("/api/income");
+  // El formulario de ingreso arma los chips de procedencia con esto, así que no
+  // hace falta volver a pedirlo cuando se abre la sheet.
+  state.incomeSources = data.by_source;
   $("#income-head").innerHTML = data.count
     ? `<strong>${moneyFmt(data.total)}</strong> <span class="muted">en ${data.count} cobro(s) durante ${esc(data.month)}</span>`
     : "";
@@ -919,11 +991,21 @@ async function onSubmitTx(e) {
   e.preventDefault();
   const btn = e.target.querySelector("button[type=submit]");
   const amount = parseFloat($("#tx-amount").value);
-  const esIngreso = $("#tx-type").value === "income";
+  const tipo = $("#tx-type").value;
+  const esIngreso = tipo === "income";
+  const categoria = $("#tx-category").value;
+  // El campo oculto no valida required (el navegador no valida campos hidden),
+  // así que la categoría se chequea acá. Sin esto, un POST sin categoría
+  // rebotaba con un 400 del backend en vez de avisarle acá.
+  if (!categoria) {
+    toast("Elegí una categoría", "error");
+    $("#tx-category-chips").scrollIntoView({ block: "nearest" });
+    return;
+  }
   const payload = {
     type: esIngreso ? "income" : "expense",
     amount,
-    category: $("#tx-category").value,
+    category: categoria,
     goal: $("#tx-goal").value || null,
     description: $("#tx-description").value.trim(),
     date: $("#tx-date").value || null,
@@ -939,9 +1021,16 @@ async function onSubmitTx(e) {
     // Recordamos la billetera usada: casi siempre es la misma y evita elegirla.
     state.lastAccount = payload.cuenta;
     e.target.reset();
+    // form.reset() NO vacía los campos ocultos: al asignar input.value, este
+    // Chrome escribe también el atributo value, y reset() restaura el atributo.
+    // Los de tipo text/number sí se vacían. Los ocultos hay que limpiarlos a
+    // mano, y al tipo hay que devolverle el que estaba elegido (registrar tres
+    // cobros seguidos es lo normal).
+    $("#tx-type").value = tipo;
+    $("#tx-category").value = "";
+    $("#tx-date").value = new Date().toISOString().slice(0, 10);
     closeSheets();
     syncCategoryOptions();
-    $("#tx-date").value = new Date().toISOString().slice(0, 10);
     await refreshPanel();
   } catch (err) {
     toast(err.message, "error");
@@ -1144,13 +1233,23 @@ function initAuthTabs() {
 // FAB: el gesto frecuente flota siempre abajo a la derecha, en todas las tabs
 // ---------------------------------------------------------------------------
 
+// Elige gasto o ingreso. El valor real vive siempre en #tx-type; los botones
+// sólo lo escriben, así que el segmented control no puede quedar desfasado del
+// estado. Lo usan tanto los dos botones como jumpToForm().
+function setTxType(kind) {
+  $("#tx-type").value = kind;
+  $$("#tx-type-seg .seg-btn").forEach((b) => {
+    const on = b.dataset.txType === kind;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  });
+  syncCategoryOptions();
+}
+
 function jumpToForm(type) {
   // FAB cobro/gasto: abre la bottom sheet del formulario directo.
   openSheet("#sheet-movimiento");
-  $("#tx-type").value = type;
-  syncCategoryOptions();
-  const title = $("#sheet-movimiento-title");
-  if (title) title.textContent = type === "income" ? "Registrar cobro" : "Registrar gasto";
+  setTxType(type);
   setTimeout(() => $("#tx-amount").focus(), 120);
 }
 
@@ -1192,6 +1291,18 @@ function initSheets() {
   $("#account-delete").addEventListener("click", () => {
     const id = $("#account-form").dataset.id;
     if (id) deleteAccount(Number(id));
+  });
+
+  // Gasto / Ingreso
+  $$("#tx-type-seg .seg-btn").forEach((b) =>
+    b.addEventListener("click", () => setTxType(b.dataset.txType))
+  );
+  // "Más opciones": billetera, objetivo, fecha y descripción. Todo lo que se
+  // cambia una vez y después no se toca.
+  $("#tx-more-toggle").addEventListener("click", (e) => {
+    const abierto = $("#tx-more").classList.toggle("hidden") === false;
+    e.currentTarget.setAttribute("aria-expanded", abierto ? "true" : "false");
+    e.currentTarget.textContent = abierto ? "Menos opciones" : "Más opciones";
   });
 }
 

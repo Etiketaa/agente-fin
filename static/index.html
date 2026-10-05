@@ -316,43 +316,59 @@
       <button class="btn ghost small-btn" data-close-sheet type="button">✕ Cerrar</button>
     </div>
     <form id="tx-form" class="tx-form">
-      <div class="form-row">
-        <label>Tipo
-          <select id="tx-type" name="type">
-            <option value="expense">Gasto</option>
-            <option value="income">Ingreso</option>
-          </select>
-        </label>
-        <label>Monto
-          <input type="number" id="tx-amount" name="amount" step="0.01" min="0.01" required placeholder="0,00" />
-        </label>
+      <!-- El camino corto es: monto → categoría → registrar. El tipo son dos
+           botones y no un select porque se elige siempre, y #tx-type queda como
+           campo oculto para que jumpToForm() y el resto del código lo sigan
+           leyendo por id. -->
+      <input type="hidden" id="tx-type" name="type" value="expense" />
+      <div class="seg" id="tx-type-seg" role="radiogroup" aria-label="Tipo de movimiento">
+        <button type="button" class="seg-btn active" data-tx-type="expense">Gasto</button>
+        <button type="button" class="seg-btn" data-tx-type="income">Ingreso</button>
       </div>
-      <div class="form-row">
-        <label>Categoría
-          <select id="tx-category" name="category" required></select>
+
+      <label class="amount-field">Monto
+        <input type="number" id="tx-amount" name="amount" step="0.01" min="0.01"
+               inputmode="decimal" autocomplete="off" required placeholder="0,00" />
+      </label>
+
+      <div class="field-block">
+        <span class="field-label" id="tx-cat-label">Categoría</span>
+        <input type="hidden" id="tx-category" name="category" />
+        <div class="chips" id="tx-category-chips" role="radiogroup" aria-labelledby="tx-cat-label"></div>
+      </div>
+
+      <!-- La procedencia es sólo de ingresos, y casi siempre se repite: sale
+           de los ingresos del mes que ya trajo GET /api/income, sin pedir nada
+           nuevo. El campo de texto sigue ahí para lo que no se repita. -->
+      <div class="field-block hidden" id="tx-source-wrap">
+        <span class="field-label">De dónde viene</span>
+        <div class="chips" id="tx-source-chips"></div>
+        <input type="text" id="tx-source" name="source" maxlength="80"
+               autocomplete="off" placeholder="Otra procedencia..." />
+      </div>
+
+      <button type="button" class="disclosure" id="tx-more-toggle"
+              aria-expanded="false" aria-controls="tx-more">Más opciones</button>
+      <div class="more-options hidden" id="tx-more">
+        <!-- De qué billetera sale/entra la plata: es lo que mantiene al día el
+             saldo de cada una. Por defecto, la última usada. -->
+        <label>Billetera
+          <select id="tx-cuenta" name="cuenta"></select>
+        </label>
+        <label>Objetivo / recaudación
+          <select id="tx-goal" name="goal">
+            <option value="">— ninguno —</option>
+          </select>
         </label>
         <label>Fecha
           <input type="date" id="tx-date" name="date" />
         </label>
+        <label>Descripción
+          <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
+        </label>
       </div>
-      <label>Objetivo / recaudación
-        <select id="tx-goal" name="goal">
-          <option value="">— ninguno —</option>
-        </select>
-      </label>
-      <!-- De qué billetera sale/entra la plata: es lo que mantiene al día el
-           saldo de cada una. Por defecto, la última usada. -->
-      <label>Billetera
-        <select id="tx-cuenta" name="cuenta"></select>
-      </label>
-      <label id="tx-source-wrap" class="hidden">Procedencia
-        <input type="text" id="tx-source" name="source" maxlength="80"
-               placeholder="Cliente X, Empresa Y, Mercado Pago..." />
-      </label>
-      <label>Descripción
-        <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
-      </label>
-      <button type="submit" class="btn primary">Registrar</button>
+
+      <button type="submit" class="btn primary" id="tx-submit">Registrar gasto</button>
     </form>
   </div>
 

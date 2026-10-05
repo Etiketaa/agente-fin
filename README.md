@@ -289,6 +289,42 @@ lugar: nada queda escondido sin salida.
 card "Ingresos del mes" se movieron a **Más**; el feed se movió a
 **Movimientos**. Las ocho funciones de render de `static/app.js` siguen igual.
 
+### Registrar un movimiento en menos de 5 segundos
+
+Registrar es la acción que más se repite, así que el formulario se ordena por
+veces de uso y no por completitud. En `#sheet-movimiento`:
+
+- **Monto** es el campo grande (30px, alineado a la derecha) y arranca con el
+  foco puesto. Es lo único que hay que escribir.
+- **Categoría** son chips, no un `<select>`: un tap contra abrir el picker nativo
+  y scrollearlo. El valor elegido vive en `#tx-category`, que es un campo
+  oculto; los chips son sólo la forma de elegirlo.
+- **Tipo** son dos botones. `#tx-type` queda en el DOM como campo oculto
+  porque `jumpToForm()` y `onSubmitTx()` lo leen por id.
+- **Procedencia** (sólo ingresos) son chips con lo que ya entró este mes, más
+  el campo de texto al lado. Salen de `by_source`, que `GET /api/income` ya
+  devuelve: **no hay endpoint nuevo ni una request extra**. `renderIncome()`
+  guarda la lista en `state.incomeSources`.
+- **Billetera, objetivo, fecha y descripción** quedan detrás de "Más opciones".
+  Son lo que se cambia una vez y después no se toca.
+
+Cuatro cosas que no obvious:
+
+- **El tipo se conserva entre registros.** `reset()` lo volvía a "Gasto", así
+  que registrar tres cobros seguidos era cambiar el tipo tres veces.
+- **`form.reset()` no vacía los campos ocultos.** Al asignar `input.value`, este
+  Chrome escribe también el atributo `value`, y `reset()` restaura el atributo.
+  Los `text`/`number` sí se vacían; los `hidden` no. Por eso `#tx-type` y
+  `#tx-category` se limpian a mano en `onSubmitTx()`.
+- **La categoría vacía se valida en el JS.** Un `required` en un campo oculto
+  no lo valida el navegador, así que sin esto un POST sin categoría rebotaba
+  con un 400 en vez de avisarle ahí.
+- **`#tx-category` arranca con la primera categoría marcada**, que es lo que
+  hacía el `<select>` antes, pero a la vista.
+
+Nada se perdió del formulario: los ocho campos siguen ahí, cuatro de ellos a un
+toque de "Más opciones".
+
 ### La barra de destinos
 
 En el teléfono, los cinco destinos viven en una barra fija abajo
