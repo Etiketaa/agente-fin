@@ -358,8 +358,11 @@ async function renderSummary() {
   $("#sum-balance").parentElement.classList.toggle("neg", s.balance < 0);
   $("#sum-income").textContent = moneyFmt(s.total_income);
   $("#sum-expense").textContent = moneyFmt(s.total_expense);
+  $("#sum-income-hero").textContent = moneyFmt(s.total_income);
+  $("#sum-expense-hero").textContent = moneyFmt(s.total_expense);
   $("#sum-count").textContent = s.count;
   $("#period-info").textContent = `Período: ${s.period}`;
+  renderDisponible(s);
 
   // Barras: gastos por categoría
   const bars = $("#category-bars");
@@ -378,6 +381,41 @@ async function renderSummary() {
       <div class="bar-top"><span>${esc(c.category)}</span><span class="num">${moneyFmt(c.total)}</span></div>
       <div class="bar-track"><div class="bar-fill" style="width:${p}%"></div></div>`;
     bars.appendChild(row);
+  }
+}
+
+// "Disponible real" = patrimonio − lo que ya sabés que tenés que pagar.
+// Sin esto, el resultado del período de arriba se lee como "tengo esta plata",
+// que es justo la confusión que hace inútil el número.
+function renderDisponible(s) {
+  const disp = $("#sum-disponible");
+  const comp = $("#hero-comprometido");
+  const venc = $("#hero-vencido");
+  disp.textContent = moneyFmt(s.disponible);
+  disp.classList.toggle("neg", s.disponible < 0);
+
+  if (s.comprometido_cents > 0) {
+    // "2 vencimientos" y no "pagos": uno todavía no venció, no es un pago.
+    const n = s.comprometido_count;
+    const cant = `${n} vencimiento${n === 1 ? "" : "s"}`;
+    // El desglose del mes sólo suma cuando difiere del total: repetir
+    // "450.000 ... (450.000 este mes)" es ruido.
+    const detalle = s.comprometido_mes_cents > 0 && s.comprometido_mes_cents !== s.comprometido_cents
+      ? `, ${moneyFmt(s.comprometido_mes)} este mes`
+      : "";
+    comp.textContent = `después de ${moneyFmt(s.comprometido)} en ${cant} pendiente${n === 1 ? "" : "s"}${detalle}`;
+  } else {
+    comp.textContent = "no tenés vencimientos pendientes";
+  }
+
+  // Lo vencido se destaca sólo si existe: es plata que ya se fue de la cuenta
+  // pero todavía no salió de tu patrimonio.
+  if (s.vencido_cents > 0) {
+    const n = s.vencido_count;
+    venc.textContent = `${moneyFmt(s.vencido)} ya ${n === 1 ? "venció" : "vencieron"} sin pagar`;
+    venc.classList.remove("hidden");
+  } else {
+    venc.classList.add("hidden");
   }
 }
 

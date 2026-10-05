@@ -228,6 +228,50 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .summary.income .card-value { color: var(--income); }
 .summary.expense .card-value { color: var(--expense); }
 
+/* El hero contesta dos preguntas y las separa: cuánto generé en el período
+   (flujo, arriba) y cuánta plata tengo realmente disponible (stock, abajo,
+   ya descontando los pagos comprometidos). */
+.hero-flujo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+.hero-in { color: var(--income); }
+.hero-out { color: var(--expense); }
+.hero-sep { color: var(--faint); }
+
+.hero-disponible {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 2px;
+}
+.hero-disponible .card-label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+/* Por debajo del resultado: el disponible es el número que se consulta. */
+.hero-disponible-valor {
+  font-size: clamp(1.5rem, 4.6vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--text);
+}
+.hero-disponible-valor.neg { color: var(--expense); }
+.hero-vencido {
+  color: var(--expense);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 /* ---------- Grid principal ---------- */
 .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
 @media (min-width: 820px) { .grid { grid-template-columns: 1.1fr 0.9fr; } }

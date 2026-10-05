@@ -74,8 +74,22 @@
 
       <div class="cards" id="summary-cards">
         <div class="card summary hero">
-          <div class="card-label">Balance del período</div>
+          <div class="card-label">Resultado del período</div>
           <div class="card-value" id="sum-balance">—</div>
+          <div class="hero-flujo">
+            <span class="hero-in">+<span id="sum-income-hero">—</span></span>
+            <span class="hero-sep">·</span>
+            <span class="hero-out">−<span id="sum-expense-hero">—</span></span>
+          </div>
+          <!-- El número que contesta "¿cuánta plata tengo?": el resultado del
+               período es un flujo, el disponible es un stock. Y el disponible
+               tiene que descontar lo que ya está comprometido en pagos. -->
+          <div class="hero-disponible" id="hero-disponible">
+            <span class="card-label">Disponible real</span>
+            <span class="hero-disponible-valor num" id="sum-disponible">—</span>
+            <span class="muted small" id="hero-comprometido"></span>
+            <span class="hero-vencido hidden" id="hero-vencido"></span>
+          </div>
         </div>
         <div class="card summary income">
           <div class="card-label">Ingresos</div>

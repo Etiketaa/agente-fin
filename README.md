@@ -210,6 +210,43 @@ dentro de esa misma hoja: en un teléfono de 360px una fila con dos botones deja
 el nombre ilegible, y borrar una billetera amerita que ya hayas abierto esa
 billetera.
 
+## Dinero comprometido y disponible real
+
+El patrimonio dice cuánta plata tenés. No dice **cuánta ya te la gastaste en
+compromisos**, y esa diferencia es la que importa antes de gastar.
+
+`GET /api/summary` agrega tres números que salen de la misma función
+(`comprometido()` en `app/analytics.py`, sobre `bill_rows()`):
+
+- `comprometido_cents` — todo lo impago, vencido o futuro. El total que ya no
+  es tuyo aunque todavía esté en la cuenta.
+- `comprometido_mes_cents` — lo que vence este mes calendario.
+- `vencido_cents` — lo que ya pasó de fecha sin pagarse (el urgente).
+- `disponible_cents` — `patrimonio − comprometido`. El único número que
+  contesta "¿puedo gastar esto?".
+
+Los montos van acompañados de `comprometido_count` y `vencido_count` porque
+450.000 comprometidos son una cosa si es un pago y otra si son cinco.
+
+Dos decisiones que conviene no romper:
+
+- **El disponible se calcula una sola vez, en el backend.** Si el panel lo
+  restara por su cuenta y el agente también, un día divergen. Es el mismo
+  argumento que sostiene el saldo derivado de las billeteras.
+- **Estas cifras ignoran `desde`/`hasta` a propósito.** El resto de
+  `/api/summary` es un período, pero un vencimiento no "es de este mes": vence
+  en una fecha. Filtrar el resumen por fechas no puede moverlas, y el smoke lo
+  verifica.
+
+El hero del Panel muestra el resultado del período (un flujo: lo que entró
+menos lo que gastaste) separado del disponible real (un stock), con la línea de
+comprometido debajo. La etiqueta pasó de "Balance del período" a "Resultado del
+período" a propósito: "balance" mezclaba las dos cosas y se leía como "tengo
+esta plata".
+
+El agente lo dice en la misma línea de `calcular_balance`: sin ella comparaba un
+gasto contra un número que todavía había que pagar.
+
 ## Usuarios y autenticación
 
 Cada usuario ve **solo sus datos**: registro con `POST /api/auth/register`
@@ -294,7 +331,7 @@ finanzas/
 │   └── app.js
 ├── scripts/
 │   ├── demo.py            # datos de ejemplo (opcional)
-│   ├── smoke.py           # regresión end-to-end (98 chequeos, incluye auth y aislamiento)
+│   ├── smoke.py           # regresión end-to-end (104 chequeos, incluye auth y aislamiento)
 │   └── prove_provider.py  # prueba real contra el proveedor configurado
 └── requirements.txt
 ```
