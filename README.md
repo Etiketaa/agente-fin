@@ -407,6 +407,96 @@ Dos detalles de la barra:
 `data-view`: un click ahí corría la vista con `undefined` y tapaba todas las
 secciones. No se notaba porque "Salir" además cierra sesión.
 
+### El sistema visual: escala, íconos y esqueletos
+
+#### Escala tipográfica
+
+`styles.css` tenía **60 declaraciones de `font-size` con 23 valores distintos y
+cero tokens**. Eso es exactamente lo que `AGENTS.md` prohíbe, y es la razón de
+que dos cosas que deberían coincidir se desviaran 0.02rem.
+
+Ahora hay diez pasos (`--fs-2xs` … `--fs-2xl`, más `--fs-fab`) y tres alturas de
+línea, y los tamaños salen del token. La elección de los valores no es una
+progresión ideal: son los pasos que la app usa de verdad, con los valores ya
+redondeados para que **ningún texto cambie de tamaño** al migrar. Un tamaño que
+no esté en la escala hay que preguntarse primero si es nuevo o si es uno que ya
+existe con otro nombre.
+
+Tres cosas que encontraron el grep y no la vista:
+
+- Los tres números grandes del hero eran `clamp()` escritos en cada selector.
+  Ahora son `--fs-hero`, `--fs-hero-disponible` y `--fs-patrimonio`: el clamp
+  sigue siendo fluido, pero vive en un solo lugar.
+- `.tag` declaraba `letter-spacing` **dos veces** (`0.02em` y `0.08em`). El
+  segundo ganaba siempre, así que el primero no hacía nada. Esto ya estaba
+  antes de este cambio; apareció al tokenizar.
+- Quedan dos tamaños literales a propósito: `16px` en `:root`, que es la
+  definición de la escala `rem`, y el `0.85em` del `<code>`, que es relativo al
+  contexto y no un paso de la escala.
+
+#### Íconos: un sprite en línea
+
+Hay 14 íconos en un `<svg class="sprite">` **inline en `index.html`**, y se usan
+con `<use href="#i-...">`. Inline y no por CDN a propósito: un `<use>` resuelve
+contra el DOM sin ninguna request, así que no hay un round-trip extra en el
+arranque ni un tercer origen que se pueda caer. El color lo pone `currentColor`,
+o sea el CSS.
+
+La regla que decide qué se convierte y qué no: **SVG donde el ícono significa
+algo, emoji donde ilustra.**
+
+- **Se convirtieron**: los cinco destinos de la barra, las cuatro filas del FAB,
+  los tipos de meta (alcance, canasta), las advertencias, la meta alcanzada,
+  editar billetera, y los **puntos de estado**.
+- **Siguen siendo emoji**: los íconos de categoría y de billetera. Son
+  pictogramas reales, con color, y son lo que hace que una categoría se reconozca
+  de un vistazo. Dibujar 17 pictogramas a mano para reemplazar algo que ya
+  funciona no es una mejora.
+- **Quedan emoji dentro de un `<option>`**: el valor de un `option` es texto y
+  no admite SVG. No es una inconsistencia: es un control de formulario, no un
+  lugar para un ícono.
+
+Los puntos de estado (🔴🟡⚪🟢 vencidos, próximos, pagados, presupuestos) eran el
+caso más caro: **un emoji se dibuja distinto en cada sistema operativo.** Un 🔴
+es un disco rojo plano en un teléfono y una bola brillante en otro, y un estado
+de pago que cambia de forma no es un estado. Ahora son `<span class="dot">` con
+el color en CSS, tomado de la **misma clase que ya pintaba la barra** del
+bloque, así que el punto y la barra no pueden discrepar.
+
+Dos trampas del SVG que costaron un rato:
+
+- **Sin `viewBox` el ícono no escala.** Un `<svg>` sin `viewBox` dibuja las
+  rutas 1:1 sin encajar, así que las coordenadas 0–24 quedan pegadas a la
+  esquina. Todos los `<svg>` consumidores llevan `viewBox="0 0 24 24"`.
+- **`<use>` no acepta `width`/`height`.** El tamaño lo manda el `<svg>` host, no
+  el `<use>`. Para achicar el ícono de la barra dentro de su pastilla hay que
+  usar `padding` con `box-sizing: border-box`, que recorta el área de dibujo.
+  Sin eso el ícono queda a 1.9 veces la etiqueta.
+
+#### Esqueletos de carga
+
+Un viaje a Neon desde Argentina son 2-3s y `refreshPanel()` pega a **ocho
+endpoints**: el panel tarda ~3.7s en verse completo. Antes, durante esos 3.7s
+las cards llegaban vacías, y una card vacía dice "no tenés nada", que es el
+mensaje **opuesto** al real.
+
+`pintarEsqueletos()` pone bloques grises con la forma aproximada de lo que va a
+aparecer. Dos decisiones:
+
+- **Sólo se pinta si el contenedor está vacío.** Si ya hay contenido y lo que se
+  está haciendo es una recarga, taparlo hace parpadear el panel entero en cada
+  refresco, que es peor que la espera.
+- **El latido va desfasado bloque a bloque** (`nth-child`), no todo junto. Un
+  bloque que parpadea al unísono se lee como un error; uno que late en cascada se
+  lee como "cargando".
+
+`refreshPanel()` además marca `aria-busy` en `#main-container` mientras dura, y
+lo saca al terminar, para que un lector de pantalla sepa que la región está
+cambiando. Con `prefers-reduced-motion` el latido se corta y el bloque queda
+fijo al 55% de opacidad.
+
+Medido: los ocho esqueletos aparecen a los 1.6s del arranque y se van a los ~5s.
+
 ## Usuarios y autenticación
 
 Cada usuario ve **solo sus datos**: registro con `POST /api/auth/register`

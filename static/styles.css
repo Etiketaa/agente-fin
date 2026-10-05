@@ -32,6 +32,36 @@
   --space: clamp(14px, 4vw, 22px);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.4);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);  /* exponential ease-out */
+
+  /* Escala tipográfica. Los tamaños salen de acá y no de cada componente.
+     Los pasos son los que la app usa de verdad, no una progresión ideal: si
+     aparece un tamaño que no está en la escala, primero hay que preguntarse si
+     es un tamaño nuevo o uno que ya existe con otro nombre. */
+  --fs-2xs: 0.66rem;      /* etiqueta de la barra de destinos */
+  --fs-xs: 0.74rem;       /* sellos, microtexto */
+  --fs-sm: 0.8rem;        /* etiquetas de formulario, chips */
+  --fs-caption: 0.82rem;  /* "hace 3 días", notas al pie de un bloque */
+  --fs-label: 0.88rem;    /* texto de control: botones, tabs */
+  --fs-body: 0.92rem;     /* texto corriente de las cards */
+  --fs-base: 1rem;        /* párrafo */
+  --fs-lg: 1.1rem;        /* número con nombre al lado */
+  --fs-xl: 1.45rem;       /* título de card */
+  --fs-2xl: 1.9rem;       /* display: el monto del formulario */
+  --fs-fab: 1.7rem;       /* el "+" del FAB, centrado a ojo */
+  /* Los tres números grandes del hero son fluidos: crecen con la pantalla en
+     vez de saltar de un salto al otro. El clamp va en el token, no repetido en
+     cada selector. */
+  --fs-hero: clamp(2rem, 6vw, 2.9rem);
+  --fs-hero-disponible: clamp(1.5rem, 4.6vw, 2rem);
+  --fs-patrimonio: clamp(1.6rem, 5.4vw, 2.1rem);
+  --lh-tight: 1;
+  --lh-snug: 1.1;
+  --lh-normal: 1.25;
+  --lh-base: 1.45;
+  /* Los números se leen un poco más juntos que las palabras; el microtexto en
+     mayúsculas necesita aire para separarse. */
+  --ls-tight: -0.015em;
+  --ls-wide: 0.08em;
   font-size: 16px;
 }
 
@@ -48,7 +78,7 @@ body {
     radial-gradient(900px 500px at -10% 20%, rgba(110, 155, 255, 0.05), transparent 55%),
     var(--bg);
   color: var(--text);
-  line-height: 1.45;
+  line-height: var(--lh-base);
   min-height: 100vh;
 }
 
@@ -79,9 +109,9 @@ body {
   gap: 14px;
 }
 .app-header h1 {
-  font-size: 1rem;
+  font-size: var(--fs-base);
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-tight);
   margin: 0;
   white-space: nowrap;
 }
@@ -101,7 +131,7 @@ body {
   cursor: pointer;
   font: inherit;
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: var(--fs-label);
   white-space: nowrap;
   transition: color 0.18s var(--ease), background 0.18s var(--ease);
 }
@@ -109,9 +139,9 @@ body {
 .tab.active { background: var(--mint); color: var(--mint-ink); }
 
 .user-box { display: flex; align-items: center; gap: 10px; }
-.user-name { font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+.user-name { font-size: var(--fs-caption); color: var(--muted); font-weight: 600; }
 .user-name::before { content: none; }
-#logout-btn { padding: 8px 13px; font-size: 0.8rem; }
+#logout-btn { padding: 8px 13px; font-size: var(--fs-sm); }
 
 /* ---------- Layout ---------- */
 .container {
@@ -138,8 +168,8 @@ body {
   .container > section { gap: 24px; }
 }
 .hidden { display: none !important; }
-.muted { color: var(--muted); font-size: 0.85rem; }
-.small { font-size: 0.8rem; }
+.muted { color: var(--muted); font-size: var(--fs-caption); }
+.small { font-size: var(--fs-sm); }
 code { background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 6px; font-size: 0.85em; }
 
 /* Un solo momento de motion orquestado: elevación suave al entrar */
@@ -162,7 +192,7 @@ code { background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 6px;
   gap: 14px;
   margin-bottom: 4px;
 }
-.period-label { font-size: 0.88rem; color: var(--muted); display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.period-label { font-size: var(--fs-label); color: var(--muted); display: flex; align-items: center; gap: 8px; font-weight: 600; }
 
 /* Inputs: targets grandes, lectura clara en oscuro */
 select, input {
@@ -196,9 +226,9 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 }
 .card h2 {
   margin: 0 0 14px;
-  font-size: 1.02rem;
+  font-size: var(--fs-base);
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-tight);
 }
 
 /* Resumen: el balance es la escena */
@@ -222,19 +252,19 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 
 .summary .card-label {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-wide);
 }
 .summary .card-value {
-  font-size: 1.45rem;
+  font-size: var(--fs-xl);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--ls-tight);
   margin-top: 6px;
-  line-height: 1.1;
+  line-height: var(--lh-snug);
 }
-.summary.hero .card-value { font-size: clamp(2rem, 6vw, 2.9rem); letter-spacing: -0.03em; }
+.summary.hero .card-value { font-size: var(--fs-hero); letter-spacing: var(--ls-tight); }
 .summary.income .card-value { color: var(--income); }
 .summary.expense .card-value { color: var(--expense); }
 
@@ -246,7 +276,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   align-items: baseline;
   gap: 8px;
   margin-top: 8px;
-  font-size: 0.86rem;
+  font-size: var(--fs-label);
   font-weight: 700;
 }
 .hero-in { color: var(--income); }
@@ -262,10 +292,10 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 }
 .hero-disponible .card-label {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-wide);
 }
 /* El período que está usando el hero. El selector vive en Movimientos, así
    que sin esto el número de Inicio cambiaría en silencio desde otra pantalla.
@@ -279,16 +309,16 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 }
 /* Por debajo del resultado: el disponible es el número que se consulta. */
 .hero-disponible-valor {
-  font-size: clamp(1.5rem, 4.6vw, 2rem);
+  font-size: var(--fs-hero-disponible);
   font-weight: 800;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
+  letter-spacing: var(--ls-tight);
+  line-height: var(--lh-snug);
   color: var(--text);
 }
 .hero-disponible-valor.neg { color: var(--expense); }
 .hero-vencido {
   color: var(--expense);
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   font-weight: 700;
 }
 
@@ -300,7 +330,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .tx-form { display: flex; flex-direction: column; gap: 14px; }
 .form-row { display: grid; grid-template-columns: 1fr; gap: 12px; }
 @media (min-width: 560px) { .form-row { grid-template-columns: 1fr 1fr; } }
-.tx-form label { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; font-weight: 700; color: var(--muted); }
+.tx-form label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-caption); font-weight: 700; color: var(--muted); }
 
 /* ---------- Formulario de movimiento: el camino corto ---------- */
 /* Registrar es la acción que más se repite, así que el formulario se ordena
@@ -323,7 +353,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   color: var(--muted);
   font: inherit;
   font-weight: 700;
-  font-size: 0.88rem;
+  font-size: var(--fs-label);
   padding: 9px 8px;
   min-height: 40px;
   cursor: pointer;
@@ -332,14 +362,14 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .seg-btn.active { background: var(--mint); color: var(--mint-ink); }
 
 .amount-field input {
-  font-size: 1.9rem;
+  font-size: var(--fs-2xl);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--ls-tight);
   padding: 14px 16px;
   text-align: right;
 }
 .field-block { display: flex; flex-direction: column; gap: 8px; }
-.field-label { font-size: 0.82rem; font-weight: 700; color: var(--muted); }
+.field-label { font-size: var(--fs-caption); font-weight: 700; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   border: 1px solid var(--border-strong);
@@ -348,7 +378,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   color: var(--muted);
   font: inherit;
   font-weight: 600;
-  font-size: 0.84rem;
+  font-size: var(--fs-caption);
   padding: 8px 13px;
   min-height: 38px;
   cursor: pointer;
@@ -366,7 +396,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   color: var(--faint);
   font: inherit;
   font-weight: 700;
-  font-size: 0.82rem;
+  font-size: var(--fs-caption);
   text-align: left;
   padding: 8px 0;
   cursor: pointer;
@@ -401,15 +431,15 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); font-weight: 700; padding: 8px 13px; min-height: 38px; }
 .btn.ghost:hover { border-color: var(--border-strong); background: rgba(255,255,255,0.04); }
 .btn.danger { background: var(--expense-soft); color: var(--expense); border: 1px solid transparent; }
-.small-btn { padding: 9px 14px; font-size: 0.84rem; min-height: 38px; }
+.small-btn { padding: 9px 14px; font-size: var(--fs-caption); min-height: 38px; }
 
 /* ---------- Barras ---------- */
 .bar-row { margin-bottom: 12px; }
 .bar-row:last-child { margin-bottom: 0; }
-.bar-top { display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+.bar-top { display: flex; justify-content: space-between; font-size: var(--fs-caption); font-weight: 600; margin-bottom: 6px; }
 .bar-track { background: rgba(255,255,255,0.06); border-radius: 999px; height: 6px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 999px; background: var(--mint); }
-.no-data { color: var(--muted); font-size: 0.88rem; padding: 6px 0; }
+.no-data { color: var(--muted); font-size: var(--fs-label); padding: 6px 0; }
 
 /* ---------- Quick actions ---------- */
 /* El gesto frecuente vive dentro del balance: al abrir la app ya está a un tap.
@@ -432,16 +462,16 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border-radius: var(--radius-s);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   cursor: pointer;
-  line-height: 1.25;
+  line-height: var(--lh-normal);
   text-align: center;
   transition: background 0.15s var(--ease), transform 0.12s var(--ease);
 }
 .qa:hover { background: rgba(255, 255, 255, 0.07); }
 .qa:active { transform: scale(0.96); }
-.qa-icon { font-size: 1.15rem; }
+.qa-icon { font-size: var(--fs-lg); }
 
 /* Flash del destino de una quick action (card foco) */
 @keyframes cardflash {
@@ -458,11 +488,11 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   justify-content: space-between;
   align-items: baseline;
   padding: 10px 2px 6px;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   font-weight: 800;
   color: var(--faint);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: var(--ls-wide);
 }
 .feed-item {
   display: flex;
@@ -481,12 +511,12 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border);
-  font-size: 1rem;
+  font-size: var(--fs-base);
 }
 .feed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.feed-desc { font-weight: 700; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feed-desc { font-weight: 700; font-size: var(--fs-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .feed-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.feed-amt { flex: 0 0 auto; font-weight: 800; font-size: 0.95rem; }
+.feed-amt { flex: 0 0 auto; font-weight: 800; font-size: var(--fs-body); }
 .feed-del { opacity: 0; padding: 4px 10px; min-height: 30px; }
 .feed-item:hover .feed-del, .feed-item:focus-within .feed-del { opacity: 1; }
 @media (hover: none) { .feed-del { opacity: 1; } } /* celular: sin hover, siempre visible */
@@ -500,9 +530,8 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 
 .tag {
   display: inline-block;
-  font-size: 0.7rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
-  letter-spacing: 0.02em;
   padding: 4px 10px;
   border-radius: 999px;
   vertical-align: middle;
@@ -530,7 +559,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 0.82rem;
+  font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--muted);
   flex: 1 1 150px;
@@ -579,13 +608,13 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   .goal-head > :first-child { flex: 1 1 140px; min-width: 0; }
   .bill-actions { flex: 1 1 100%; justify-content: space-between; }
 }
-.goal-name { font-weight: 800; font-size: 0.96rem; letter-spacing: -0.01em; }
+.goal-name { font-weight: 800; font-size: var(--fs-body); letter-spacing: var(--ls-tight); }
 .goal-track { height: 6px; margin-bottom: 8px; }
 .goal-card.en_curso .bar-fill, .budget-card.ok .bar-fill { background: var(--mint); }
 .goal-card.vencido .bar-fill, .budget-card.excedido .bar-fill { background: var(--expense); }
 .budget-card.atencion .bar-fill { background: var(--amber); }
 .goal-card.alcanzado .bar-fill { background: var(--income); }
-.goal-extra { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
+.goal-extra { margin-top: 8px; font-size: var(--fs-caption); color: var(--muted); }
 /* De dónde sale el número de una meta de recaudación: recaudado menos gastado.
    En el teléfono baja de ancho y se parte en dos líneas, porque tres columnas
    de "recaudado / gastado / disponible" no entran en 360px. */
@@ -598,7 +627,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   background: var(--bg-soft);
-  font-size: 0.82rem;
+  font-size: var(--fs-caption);
 }
 .goal-desglose-dato { display: flex; align-items: baseline; gap: 6px; }
 @media (max-width: 400px) {
@@ -624,16 +653,16 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 }
 .patrimonio .card-label {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-wide);
 }
 .patrimonio-total {
-  font-size: clamp(1.6rem, 5.4vw, 2.1rem);
+  font-size: var(--fs-patrimonio);
   font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  letter-spacing: var(--ls-tight);
+  line-height: var(--lh-snug);
 }
 .patrimonio-aviso { margin: -2px 0 10px; }
 .patrimonio-aviso:empty { display: none; }
@@ -647,16 +676,16 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   padding: 12px 2px;
   border-top: 1px solid var(--border);
 }
-.account-icon { font-size: 1.15rem; line-height: 1; }
+.account-icon { font-size: var(--fs-lg); line-height: var(--lh-tight); }
 .account-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .account-name {
   font-weight: 700;
-  font-size: 0.92rem;
+  font-size: var(--fs-body);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.account-amt { font-weight: 800; font-size: 0.95rem; white-space: nowrap; }
+.account-amt { font-weight: 800; font-size: var(--fs-body); white-space: nowrap; }
 .account-acts { display: flex; gap: 6px; }
 /* Botón de icono: 44px de área táctil (el mínimo cómodo) con glifo chico.
    En pantallas angostas el nombre de la billetera es lo que necesita el
@@ -668,7 +697,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.95rem;
+  font-size: var(--fs-body);
 }
 @media (max-width: 420px) {
   .account-row { gap: 9px; }
@@ -692,18 +721,18 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border-radius: var(--radius);
   padding: 14px 18px;
 }
-.alert-title { font-weight: 800; color: var(--amber); font-size: 0.92rem; margin-bottom: 8px; }
-.alert-box ul { margin: 0; padding-left: 18px; font-size: 0.88rem; }
+.alert-title { font-weight: 800; color: var(--amber); font-size: var(--fs-body); margin-bottom: 8px; }
+.alert-box ul { margin: 0; padding-left: 18px; font-size: var(--fs-label); }
 .alert-box li { margin: 4px 0; }
 
 /* ---------- Ingresos del mes ---------- */
-.income-head { margin-bottom: 12px; font-size: 1.05rem; font-weight: 800; letter-spacing: -0.01em; }
+.income-head { margin-bottom: 12px; font-size: var(--fs-base); font-weight: 800; letter-spacing: var(--ls-tight); }
 .income-head .muted { font-weight: 600; }
 .income-sources { margin-bottom: 16px; }
 .income-fill { background: var(--income); }
 .income-day { border-top: 1px solid var(--border); padding: 10px 0 8px; }
-.income-day-head { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
-.income-day ul { margin: 0; padding: 0; list-style: none; font-size: 0.9rem; }
+.income-day-head { display: flex; justify-content: space-between; font-size: var(--fs-caption); color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.income-day ul { margin: 0; padding: 0; list-style: none; font-size: var(--fs-label); }
 .income-day li { padding: 5px 0; display: flex; align-items: baseline; gap: 8px; justify-content: space-between; }
 
 /* ---------- Chat ---------- */
@@ -721,7 +750,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   max-width: 84%;
   padding: 11px 15px;
   border-radius: 16px;
-  font-size: 0.92rem;
+  font-size: var(--fs-body);
   white-space: pre-wrap;
   word-wrap: break-word;
 }
@@ -744,8 +773,8 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   padding: 14px 18px;
   margin-top: 12px;
 }
-.pending-card .pending-title { font-weight: 800; color: var(--amber); font-size: 0.9rem; margin-bottom: 8px; }
-.pending-card .pending-summary { font-size: 0.92rem; margin-bottom: 12px; font-weight: 600; }
+.pending-card .pending-title { font-weight: 800; color: var(--amber); font-size: var(--fs-label); margin-bottom: 8px; }
+.pending-card .pending-summary { font-size: var(--fs-body); margin-bottom: 12px; font-weight: 600; }
 .pending-actions { display: flex; gap: 10px; }
 .btn.confirm { background: var(--amber); color: #3a2703; }
 
@@ -804,7 +833,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
 }
-.sheet-title { font-size: 1rem; font-weight: 800; letter-spacing: -0.01em; }
+.sheet-title { font-size: var(--fs-base); font-weight: 800; letter-spacing: var(--ls-tight); }
 
 /* ---------- Barra inferior de destinos ---------- */
 /* Sólo en el teléfono. En escritorio la nav del header hace lo mismo y se ve
@@ -849,22 +878,23 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   .tabbar-icon {
     display: grid;
     place-items: center;
+    /* La pastilla mide 40×26 como cuando esto era un emoji, así el ancho de
+       cada destino no se mueve. El padding recorta el área de dibujo del svg:
+       con el viewBox de 24 al tamaño completo el ícono salía 1.9 veces la
+       etiqueta y llenaba la pastilla de borde a borde. */
+    box-sizing: border-box;
+    padding: 2px 9px;
     width: 40px;
     height: 26px;
     border-radius: 999px;
-    font-size: 1.02rem;
-    line-height: 1;
     transition: background 0.18s var(--ease);
   }
   .tabbar-item.active .tabbar-icon { background: var(--mint-soft); }
-  /* El "más" no es emoji: "⋯" es un carácter, no un glifo de color, y se ve
-     igual en cualquier teléfono. */
-  .tabbar-icon-more { font-size: 1.1rem; letter-spacing: 1px; color: currentColor; }
   .tabbar-label {
-    font-size: 0.66rem;
+    font-size: var(--fs-2xs);
     font-weight: 600;
-    letter-spacing: -0.01em;
-    line-height: 1;
+    letter-spacing: var(--ls-tight);
+    line-height: var(--lh-tight);
   }
 }
 
@@ -895,14 +925,87 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   background: var(--expense-soft);
 }
 .pagos-valor {
-  font-size: 1.02rem;
+  font-size: var(--fs-base);
   font-weight: 800;
-  letter-spacing: -0.015em;
+  letter-spacing: var(--ls-tight);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .pagos-dato-urgent .pagos-valor { color: var(--expense); }
+
+/* ---------- Íconos ---------- */
+/* El sprite está en línea en index.html, así que un <use> no hace ninguna
+   request: no hay un origen más que se pueda caer ni un round-trip en el
+   arranque. `.sprite` no se pinta. */
+.sprite { display: none; }
+.ico {
+  width: 1.05em;
+  height: 1.05em;
+  flex: 0 0 auto;
+  vertical-align: -0.16em;
+  /* Acá NO va `fill: none`. Una regla de CSS le gana siempre al atributo
+     `fill` de un elemento del sprite, y varios íconos lo usan para el punto
+     lleno de su trazo (el del aviso, el del objetivo, el del robot).
+     El relleno ya lo declara cada `<g>` del sprite. */
+}
+
+/* Punto de estado. Reemplaza a 🔴🟡⚪🟢, que se dibujan distinto en cada
+   sistema operativo: un estado que cambia de forma no es un estado. El color
+   sale de la misma clase que ya pintaba la barra del bloque, así que el punto
+   y la barra no pueden discrepar. */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: 0.04em;
+  background: var(--faint);
+  flex: 0 0 auto;
+}
+.dot-ok, .dot-pagado { background: var(--mint); }
+.dot-atencion, .dot-proximo { background: var(--amber); }
+.dot-excedido, .dot-vencido { background: var(--expense); }
+
+/* ---------- Esqueletos de carga ---------- */
+/* La forma del bloque que va a aparecer, en gris, latiendo. Un viaje a Neon son
+   2-3s y el panel pega a ocho endpoints: sin esto las cards llegan vacías y no
+   se distingue "todavía no llegó" de "no tenés nada". */
+.esq { display: flex; flex-direction: column; gap: 9px; }
+.esq-fila {
+  display: block;
+  height: 46px;
+  border-radius: var(--radius-s);
+  background: var(--bg-soft);
+}
+.esq-linea {
+  display: block;
+  height: 11px;
+  width: 42%;
+  border-radius: 999px;
+  background: var(--bg-soft);
+}
+/* La pista va pegada a su línea, como la barra de una categoría real. */
+.esq-pista {
+  display: block;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  margin-top: -5px;
+}
+.esq > * { animation: esq-latido 1.5s var(--ease) infinite; }
+/* El desfasaje hace que el latido recorra los bloques en vez de parpadear
+   todo junto, que es lo que hace que se lea "cargando". */
+.esq > :nth-child(3n + 2) { animation-delay: 0.18s; }
+.esq > :nth-child(3n) { animation-delay: 0.36s; }
+@keyframes esq-latido {
+  0%, 100% { opacity: 0.34; }
+  50% { opacity: 0.78; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .esq > * { animation: none; opacity: 0.55; }
+}
 
 /* ---------- FAB (acción flotante, disponible en todas las pestañas) ---------- */
 .fab-wrap {
@@ -928,9 +1031,9 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border: none;
   background: var(--mint);
   color: var(--mint-ink);
-  font-size: 1.7rem;
+  font-size: var(--fs-fab);
   font-weight: 800;
-  line-height: 1;
+  line-height: var(--lh-tight);
   cursor: pointer;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
@@ -975,7 +1078,6 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border-radius: 10px;
   display: grid;
   place-items: center;
-  font-size: 1rem;
   border: 1px solid var(--border);
 }
 .fab-row-icon.mint { background: var(--income-soft); }
@@ -994,7 +1096,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border: 1px solid var(--border-strong);
   padding: 12px 22px;
   border-radius: 999px;
-  font-size: 0.9rem;
+  font-size: var(--fs-label);
   font-weight: 700;
   box-shadow: var(--shadow);
   z-index: 100;
@@ -1024,6 +1126,6 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   border: 1px solid rgba(255,122,110,0.3);
   border-radius: var(--radius-s);
   padding: 10px 14px;
-  font-size: 0.85rem;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }

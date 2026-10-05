@@ -307,7 +307,7 @@ async function renderAccounts() {
         ${
           a.es_default
             ? ""
-            : `<button class="btn ghost small-btn" data-edit-account="${a.id}" title="Ajustar saldo de ${esc(a.name)}">✎</button>`
+            : `<button class="btn ghost small-btn" data-edit-account="${a.id}" title="Ajustar saldo de ${esc(a.name)}"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-pencil"/></svg></button>`
         }
       </span>`;
     box.appendChild(row);
@@ -546,7 +546,7 @@ async function renderTransactions() {
       const cc = cuentaDe(t);
       const chips = [
         t.source ? `<span class="tag source">💵 ${esc(t.source)}</span>` : "",
-        t.goal ? `<span class="tag goal">🎯 ${esc(t.goal)}</span>` : "",
+        t.goal ? `<span class="tag goal"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-target"/></svg>${esc(t.goal)}</span>` : "",
         // La billetera sólo cuando NO es «General»: mostrarla siempre sería ruido.
         cc ? `<span class="tag cuenta">${cc.icon} ${esc(cc.name)}</span>` : "",
       ].filter(Boolean).join(" ");
@@ -591,7 +591,7 @@ async function loadAlerts() {
   const items = alerts.map((a) => `<li>${esc(a.message)}</li>`).join("");
   box.innerHTML = `
     <div class="alert-box">
-      <div class="alert-title">⚠️ Requiere tu atención (${alerts.length})</div>
+      <div class="alert-title"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-alert"/></svg>Requiere tu atención (${alerts.length})</div>
       <ul>${items}</ul>
     </div>`;
   box.classList.remove("hidden");
@@ -634,7 +634,45 @@ async function renderIncome() {
   }).join("");
 }
 
+// Un placeholder con la forma aproximada de lo que va a aparecer.
+//
+// Por qué existe: un viaje a Neon desde Argentina son 2-3s y `refreshPanel`
+// pega a ocho endpoints, así que el panel tarda ~3.7s en verse completo. Sin
+// esto la pantalla aparece con las cards vacías y no se distingue "todavía no
+// llegó nada" de "no tenés nada", que son dos mensajes opuestos.
+//
+// Sólo se pinta cuando el contenedor está vacío. Si ya hay contenido y lo que
+// se está haciendo es una recarga, taparlo con un esqueleto hace parpadear el
+// panel entero en cada refresco, que es peor que la espera.
+const ESQUELOTOS = [
+  // [selector, cuántas filas, forma]
+  ["#bills-list", 3, "fila"],
+  ["#goals-list", 1, "fila"],
+  ["#budgets-list", 2, "fila"],
+  ["#budgets-strip", 1, "fila"],
+  ["#accounts-list", 2, "fila"],
+  ["#tx-feed", 6, "fila"],
+  ["#income-days", 7, "fila"],
+  ["#category-bars", 5, "barra"],
+];
+
+function pintarEsqueletos() {
+  for (const [sel, filas, forma] of ESQUELOTOS) {
+    const box = $(sel);
+    if (!box || box.innerHTML.trim()) continue;
+    const piezas = [];
+    for (let i = 0; i < filas; i++) {
+      if (forma === "barra") piezas.push('<span class="esq-linea"></span>', '<span class="esq-pista"></span>');
+      else piezas.push('<span class="esq-fila"></span>');
+    }
+    box.innerHTML = `<div class="esq" aria-hidden="true">${piezas.join("")}</div>`;
+  }
+}
+
 async function refreshPanel() {
+  pintarEsqueletos();
+  const cont = $("#main-container");
+  if (cont) cont.setAttribute("aria-busy", "true");
   // allSettled y no all: si un endpoint falla, el resto del panel tiene que
   // seguir mostrando algo. Con Promise.all, un solo fallo dejaba el panel a
   // medio cargar sin explicar por qué.
@@ -649,6 +687,7 @@ async function refreshPanel() {
     ["alertas", loadAlerts],
   ];
   const fallos = await Promise.allSettled(tareas.map(([, fn]) => fn()));
+  if (cont) cont.removeAttribute("aria-busy");
   const errores = fallos
     .map((r, i) => (r.status === "rejected" ? `${tareas[i][0]}: ${r.reason?.message || r.reason}` : null))
     .filter(Boolean);
@@ -737,7 +776,8 @@ function renderGoals() {
     const el = document.createElement("div");
     el.className = `goal-card ${g.status}`;
     const parts = [];
-    if (g.status === "alcanzado") parts.push("🎉 ¡Alcanzado!");
+    if (g.status === "alcanzado")
+      parts.push('<svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-check"/></svg> ¡Alcanzado!');
     else if (g.status === "vencido") parts.push("⏰ Venció sin completarse");
     if (g.required_per_month) {
       parts.push(`faltan ${moneyFmt(g.required_per_month)} por mes para llegar a la fecha`);
@@ -747,8 +787,8 @@ function renderGoals() {
       : "";
     const fecha = g.target_date ? esc(g.target_date) : "sin fecha límite";
     const badge = g.kind === "recaudacion"
-      ? ` <span class="tag goal-kind">🧺 recaudación</span>`
-      : ` <span class="tag goal-kind">🎯 ahorro</span>`;
+      ? ` <span class="tag goal-kind"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-basket"/></svg>recaudación</span>`
+      : ` <span class="tag goal-kind"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-piggy"/></svg>ahorro</span>`;
     // En una meta de recaudación el número grande es la resta (recaudado menos
     // gastado), que no se puede explicar solo. El desglose dice de dónde sale.
     // En una meta de ahorro no: lo que aporta es plata y ya se ve.
@@ -836,14 +876,13 @@ function budgetRowHtml(b, conBorrar) {
   if (b.projected_cents > b.limit_cents && b.status !== "excedido") {
     partes.push(`a este ritmo terminás el mes en ${moneyFmt(b.projected)}`);
   }
-  const icon = b.status === "excedido" ? "🔴" : b.status === "atencion" ? "🟡" : "🟢";
   const borrar = conBorrar
     ? `<button class="btn ghost small-btn" data-del-budget="${b.id}" title="Eliminar presupuesto">✕</button>`
     : "";
   return `
     <div class="goal-head">
       <div>
-        <div class="goal-name">${icon} ${esc(b.category)}</div>
+        <div class="goal-name"><span class="dot dot-${b.status}" aria-hidden="true" viewBox="0 0 24 24"></span>${esc(b.category)}</div>
         <div class="muted small">${partes.map(esc).join(" · ")}</div>
       </div>
       ${borrar}
@@ -954,12 +993,12 @@ async function loadBills() {
   for (const b of visibles) {
     const el = document.createElement("div");
     el.className = `bill-card ${b.state}`;
-    const icon = b.state === "vencido" ? "🔴" : b.state === "proximo" ? "🟡" : "⚪";
+    const icono = `<span class="dot dot-${b.state}" aria-hidden="true" viewBox="0 0 24 24"></span>`;
     const rec = b.recurrence === "monthly" ? " · mensual" : "";
     el.innerHTML = `
       <div class="goal-head">
         <div>
-          <div class="goal-name">${icon} ${esc(b.description)}</div>
+          <div class="goal-name">${icono}${esc(b.description)}</div>
           <div class="muted small">${billCuando(b)} · ${esc(b.category)}${esc(rec)}</div>
         </div>
         <div class="bill-actions">
@@ -1127,7 +1166,7 @@ function renderPending(action) {
   const card = document.createElement("div");
   card.className = "pending-card";
   card.innerHTML = `
-    <div class="pending-title">⚠️ Se requiere tu confirmación</div>
+    <div class="pending-title"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-alert"/></svg>Se requiere tu confirmación</div>
     <div class="pending-summary">${esc(action.summary)}</div>
     <div class="pending-actions">
       <button class="btn confirm" id="pending-yes">Confirmar</button>

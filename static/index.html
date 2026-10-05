@@ -17,9 +17,84 @@
   <meta name="apple-mobile-web-app-title" content="Finanzas" />
 </head>
 <body>
+  <!-- ==============================================================
+       Sprite de íconos, en línea y sin CDN.
+
+       Se inlinea en el documento y no se pide a ningún servidor: un
+       `<use href="#i-...">` resuelve contra el DOM sin ninguna request,
+       así que no hay un round-trip extra en el arranque ni un tercer
+       origen que se pueda caer. Con `display:none` no se pinta.
+
+       Por qué SVG y no emoji, para lo que *significa* algo: un emoji se
+       dibuja distinto en cada sistema operativo. Un 🔴 es un disco rojo
+       plano en un teléfono y una bola brillante en otro, y un estado de
+       pago que cambia de forma no es un estado. Los emoji quedan sólo
+       donde son ilustración (los íconos de categoría y de billetera) o
+       dentro de un `<option>`, que es texto y no admite SVG.
+       ============================================================== -->
+  <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <!-- Los trazos heredan currentColor, así que el color lo pone el CSS. -->
+      <g id="i-home" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.6 12 3.2l9 7.4V19a1.6 1.6 0 0 1-1.6 1.6h-4.6V15H9.2v5.6H4.6A1.6 1.6 0 0 1 3 19z"/>
+      </g>
+      <g id="i-list" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 6.5h12M9 12h12M9 17.5h12"/>
+        <path d="M3.6 6.5h.02M3.6 12h.02M3.6 17.5h.02" stroke-width="2.4"/>
+      </g>
+      <g id="i-target" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="4.4"/><circle cx="12" cy="12" r="1" fill="currentColor"/>
+      </g>
+      <g id="i-piggy" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.2 12.4a7.8 7.8 0 0 1 7.8-6.3 7.8 7.8 0 0 1 5.5 2.2l3.3-.7-1.2 2.8a6 6 0 0 1 .2 1.6 7.8 7.8 0 0 1-2.1 4.6v2.6h-2.6v-1.5a10 10 0 0 1-3.2.5 10 10 0 0 1-3.2-.5v1.5H6.4v-2.6a7.6 7.6 0 0 1-2.2-3.4z"/>
+        <circle cx="8.1" cy="11.4" r=".9" fill="currentColor" stroke="none"/>
+        <path d="M10.4 6.6 9.6 4.2h2.6"/>
+      </g>
+      <g id="i-basket" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.8 9.4h18.4l-1.9 10.2a1.4 1.4 0 0 1-1.4 1.1H6.1a1.4 1.4 0 0 1-1.4-1.1z"/>
+        <path d="m8.4 9.4 3.6-5 3.6 5M9.6 13.2v4.2M14.4 13.2v4.2"/>
+      </g>
+      <g id="i-bot" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.6" y="7.6" width="16.8" height="12.6" rx="3.4"/>
+        <path d="M12 3.4v4.2M8.9 4.2h6.2"/>
+        <circle cx="9" cy="13.4" r="1.1" fill="currentColor" stroke="none"/>
+        <circle cx="15" cy="13.4" r="1.1" fill="currentColor" stroke="none"/>
+        <path d="M9.6 17.2h4.8"/>
+      </g>
+      <g id="i-more" fill="currentColor">
+        <circle cx="5.2" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.8" cy="12" r="1.7"/>
+      </g>
+      <g id="i-alert" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3.4 2.4 20.2h19.2z"/><path d="M12 9.6v4.8"/><circle cx="12" cy="17.2" r="1" fill="currentColor" stroke="none"/>
+      </g>
+      <g id="i-check" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8.6"/><path d="m8.1 12.4 2.7 2.8 5.2-5.7"/>
+      </g>
+      <g id="i-calendar" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.4" y="5.2" width="17.2" height="15.4" rx="2.6"/>
+        <path d="M3.4 10.2h17.2M8.2 3.2v4M15.8 3.2v4M8 14h2M14 14h2"/>
+      </g>
+      <g id="i-in" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3.6v13.8M6.4 11.8 12 17.4l5.6-5.6M4 20.6h16"/>
+      </g>
+      <g id="i-out" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20.4V6.6M6.4 12.2 12 6.6l5.6 5.6M4 20.6h16"/>
+      </g>
+      <g id="i-pencil" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 20.2h4.2L20 8.4a2 2 0 0 0 0-2.8l-1.6-1.6a2 2 0 0 0-2.8 0L3.8 15.8z"/><path d="m14.6 5.4 4 4"/>
+      </g>
+      <g id="i-wallet" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.2 8.4a2.4 2.4 0 0 1 2.4-2.4h11.6a2.4 2.4 0 0 1 2.4 2.4"/>
+        <rect x="3.2" y="7.4" width="17.6" height="12.2" rx="2.8"/>
+        <path d="M20.8 11.6h-3.2a2 2 0 0 0 0 4h3.2"/>
+        <circle cx="17.6" cy="13.6" r=".6" fill="currentColor" stroke="none"/>
+      </g>
+    </defs>
+  </svg>
+
   <header class="app-header">
     <div class="app-header-inner">
-      <h1>💰 Finanzas Personales</h1>
+      <h1>Finanzas Personales</h1>
       <!-- En el teléfono esta nav se oculta y queda la barra de abajo: con
            cinco destinos arriba se comía media pantalla y el contenido
            empezaba en el pliegue. En escritorio sigue estando arriba, que
@@ -41,7 +116,7 @@
   <!-- Pantalla de acceso: se muestra si no hay sesión iniciada -->
   <div id="auth-screen" class="hidden">
     <div class="card auth-card">
-      <h2>💰 Finanzas Personales</h2>
+      <h2><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-wallet"/></svg>Finanzas Personales</h2>
       <p class="muted small">Cada usuario ve solo sus propios datos.</p>
       <div class="tabs auth-tabs">
         <button class="tab dark active" data-auth="login">Entrar</button>
@@ -283,7 +358,8 @@
       <div class="card chat-card">
         <h2>Asistente financiero</h2>
         <div id="chat-fallback" class="muted small hidden">
-          ⚠️ Modo demo: el agente responde con reglas simuladas. Configurá <code>OPENAI_API_KEY</code> para
+          <svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-alert"/></svg>
+          Modo demo: el agente responde con reglas simuladas. Configurá <code>OPENAI_API_KEY</code> para
           respuestas reales (ver README).
         </div>
         <div id="chat-log" class="chat-log"></div>
@@ -448,23 +524,23 @@
        arriba de esta barra. -->
   <nav class="tabbar" id="main-tabbar" aria-label="Destinos">
     <button class="tabbar-item active" data-view="panel" type="button">
-      <span class="tabbar-icon" aria-hidden="true">🏠</span>
+      <svg class="tabbar-icon" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-home"/></svg>
       <span class="tabbar-label">Inicio</span>
     </button>
     <button class="tabbar-item" data-view="movimientos" type="button">
-      <span class="tabbar-icon" aria-hidden="true">📋</span>
+      <svg class="tabbar-icon" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-list"/></svg>
       <span class="tabbar-label">Movim.</span>
     </button>
     <button class="tabbar-item" data-view="metas" type="button">
-      <span class="tabbar-icon" aria-hidden="true">🎯</span>
+      <svg class="tabbar-icon" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-target"/></svg>
       <span class="tabbar-label">Metas</span>
     </button>
     <button class="tabbar-item" data-view="agent" type="button">
-      <span class="tabbar-icon" aria-hidden="true">🤖</span>
+      <svg class="tabbar-icon" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-bot"/></svg>
       <span class="tabbar-label">Agente</span>
     </button>
     <button class="tabbar-item" data-view="mas" type="button">
-      <span class="tabbar-icon tabbar-icon-more" aria-hidden="true">•••</span>
+      <svg class="tabbar-icon" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more"/></svg>
       <span class="tabbar-label">Más</span>
     </button>
   </nav>
@@ -473,19 +549,19 @@
   <div class="fab-wrap" id="fab-wrap">
     <div class="fab-sheet hidden" id="fab-sheet">
       <button class="fab-row" data-action="cobro" type="button">
-        <span class="fab-row-icon mint">💵</span>
+        <svg class="fab-row-icon mint" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-in"/></svg>
         <span class="fab-row-main"><strong>Registrar cobro</strong><small class="muted">Dinero que entra</small></span>
       </button>
       <button class="fab-row" data-action="gasto" type="button">
-        <span class="fab-row-icon coral">💸</span>
+        <svg class="fab-row-icon coral" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-out"/></svg>
         <span class="fab-row-main"><strong>Registrar gasto</strong><small class="muted">Dinero que sale</small></span>
       </button>
       <button class="fab-row" data-action="pagar" type="button">
-        <span class="fab-row-icon amber">🗓</span>
+        <svg class="fab-row-icon amber" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-calendar"/></svg>
         <span class="fab-row-main"><strong>Pagar vencimiento</strong><small class="muted">Lo que se termina este mes</small></span>
       </button>
       <button class="fab-row" data-action="consulta" type="button">
-        <span class="fab-row-icon violet">🤖</span>
+        <svg class="fab-row-icon violet" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-bot"/></svg>
         <span class="fab-row-main"><strong>Preguntar al agente</strong><small class="muted">Cómo voy, qué falta</small></span>
       </button>
     </div>
