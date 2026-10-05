@@ -105,10 +105,12 @@
           <div class="goal-head">
             <div>
               <h2>Pagos que tenés que hacer</h2>
-              <p class="muted small">
-                Tarjeta, alquiler, seguro. Al pagar se genera el gasto y el mes
-                siguiente se crea solo.
-              </p>
+              <!-- Los tres números del card. El párrafo que estaba acá
+                   ("Tarjeta, alquiler, seguro...") ya no tiene lugar: la card
+                   existe para responder cuánto hay que sacar, no para
+                   explicar qué es un vencimiento, que se explica donde se
+                   crea. -->
+              <div class="pagos-resumen hidden" id="pagos-resumen"></div>
             </div>
             <button class="btn primary small-btn" id="btn-nuevo-bill" type="button">+ Agregar</button>
           </div>

@@ -850,6 +850,42 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
   }
 }
 
+/* Los tres números de la card de pagos: total, vencido, y lo que queda. En el
+   teléfono se apilan porque tres columnas de ancho no entran en 360 y cada
+   número tiene que poder leerse sin effort. */
+.pagos-resumen {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+@media (min-width: 560px) {
+  .pagos-resumen { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.pagos-dato {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-soft);
+  min-width: 0;
+}
+.pagos-dato-urgent {
+  border-color: color-mix(in srgb, var(--expense) 40%, transparent);
+  background: var(--expense-soft);
+}
+.pagos-valor {
+  font-size: 1.02rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pagos-dato-urgent .pagos-valor { color: var(--expense); }
+
 /* ---------- FAB (acción flotante, disponible en todas las pestañas) ---------- */
 .fab-wrap {
   position: fixed;

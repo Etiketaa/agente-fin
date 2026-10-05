@@ -325,6 +325,35 @@ Cuatro cosas que no obvious:
 Nada se perdió del formulario: los ocho campos siguen ahí, cuatro de ellos a un
 toque de "Más opciones".
 
+### La card de pagos contesta cuánto, no sólo cuáles
+
+"Pagos que tenés que hacer" tenía una lista de filas y una frase que explicaba
+qué es un vencimiento. La lista contesta *cuáles*; no contesta *cuánta plata hay
+que sacar*, y con ocho filas eso hay que sumarlo a mano. Ahora el head de la card
+trae tres números:
+
+- **Total a pagar** — el comprometido, con la cantidad de vencimientos.
+- **Vencido** — en rojo, con la cantidad que ya se pasó de fecha.
+- **Si pagás lo vencido** — `comprometido_cents − vencido_cents`: lo que queda
+  una vez saldada la parte urgente.
+
+Los tres salen de `/api/summary`, que el hero ya pide: **no hay request extra**.
+La resta se hace en centavos y se formatea recién al mostrarla.
+
+No es el mismo número que el del hero, y por eso no es duplicado: el hero
+responde "¿cuánto tengo disponible?" (patrimonio − comprometido) y la card
+responde "¿cuánto tengo que sacar?". Son dos restas distintas sobre el mismo
+comprometido.
+
+En el teléfono los tres se apilan: tres columnas no entran en 360px y cada
+número tiene que poder leerse. En 560px o más van en tres columnas iguales.
+
+Lo que sí se borró es la frase "Tarjeta, alquiler, seguro. Al pagar se genera el
+gasto y el mes siguiente se crea solo." — la card existe para decir cuánto hay
+que sacar, no para explicar qué es un vencimiento, y eso ya se explica en la
+pantalla donde se crea. La explicación sigue viva: el botón "Pagar" de cada fila
+dice "genera el gasto" y los bills mensuales se marcan con "· mensual".
+
 ### La barra de destinos
 
 En el teléfono, los cinco destinos viven en una barra fija abajo

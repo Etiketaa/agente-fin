@@ -436,6 +436,7 @@ async function renderSummary() {
   // usando: si no, este número cambia en silencio desde otra pantalla.
   $("#hero-period").textContent = s.period === "todo el historial" ? "(todo)" : `· ${s.period}`;
   renderDisponible(s);
+  renderPagosResumen(s);
 
   // Barras: gastos por categoría
   const bars = $("#category-bars");
@@ -655,6 +656,52 @@ async function refreshPanel() {
     console.error("Fallas al recargar el panel:", errores);
     toast(`No se pudo actualizar: ${errores.join(" · ")}`, "error");
   }
+}
+
+// Los tres números de la card de pagos. La lista de vencimientos contesta
+// "cuáles", pero no "cuánta plata hay que sacar": con ocho filas hay que
+// sumarlas a mano. El hero ya dice el disponible real, que es otra pregunta
+// (patrimonio menos comprometido); acá va la del-pocket.
+function renderPagosResumen(s) {
+  const box = $("#pagos-resumen");
+  if (!box) return;
+  // Sin vencimientos no hay nada que resumir: la lista dice que no tenés.
+  if (!s.comprometido_count) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  const n = s.comprometido_count;
+  // Lo que queda una vez pagada la parte vencida. En centavos, que es como
+  // viaja el dinero por la API: la resta se hace acá y se formatea recién.
+  const quedaCents = Math.max(0, s.comprometido_cents - s.vencido_cents);
+  const queda = quedaCents / 100;
+
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <div class="pagos-dato">
+      <span class="card-label">Total a pagar</span>
+      <span class="pagos-valor num">${moneyFmt(s.comprometido)}</span>
+      <span class="muted small">en ${n} vencimiento${n === 1 ? "" : "s"}</span>
+    </div>
+    ${
+      s.vencido_cents > 0
+        ? `<div class="pagos-dato pagos-dato-urgent">
+             <span class="card-label">Vencido</span>
+             <span class="pagos-valor num">${moneyFmt(s.vencido)}</span>
+             <span class="muted small">${s.vencido_count === 1 ? "1 pago que se pasó" : `${s.vencido_count} pagos que se pasaron`}</span>
+           </div>
+           <div class="pagos-dato">
+             <span class="card-label">Si pagás lo vencido</span>
+             <span class="pagos-valor num">${moneyFmt(queda)}</span>
+             <span class="muted small">te quedan por delante</span>
+           </div>`
+        : `<div class="pagos-dato">
+             <span class="card-label">Vencido</span>
+             <span class="pagos-valor num">—</span>
+             <span class="muted small">nada vencido</span>
+           </div>`
+    }`;
 }
 
 // ---------------------------------------------------------------------------
