@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import Category, SavingsGoal, Transaction
+from ...models import Account, Category, SavingsGoal, Transaction
 from ...config import get_settings
 from .base import (
     category_catalogue,
@@ -15,6 +15,30 @@ from .base import (
     money_to_cents,
     parse_date,
 )
+
+
+def resolve_account(db: Session, user_id: int, name: str | None) -> Account:
+    """Billetera de un movimiento. Sin nombre → «General» (nada queda fuera del
+    patrimonio). Nombre inexistente → error con la lista, nunca silencio."""
+    from ...seed import DEFAULT_ACCOUNT_NAME, default_account
+
+    limpio = (name or "").strip()
+    if not limpio or limpio == DEFAULT_ACCOUNT_NAME:
+        return default_account(db, user_id)
+    acc = db.scalar(
+        select(Account).where(
+            Account.user_id == user_id, func.lower(Account.name) == limpio.lower()
+        )
+    )
+    if acc is None:
+        nombres = ", ".join(
+            a.name
+            for a in db.scalars(
+                select(Account).where(Account.user_id == user_id).order_by(Account.name)
+            ).all()
+        )
+        raise ValueError(f"No existe la billetera '{limpio}'. Tenés: {nombres}.")
+    return acc
 
 
 def listar_categorias(db: Session, args: dict, user_id: int) -> str:
@@ -64,6 +88,8 @@ def registrar_transaccion(db: Session, args: dict, user_id: int) -> str:
     if tipo != "income":
         fuente = None
 
+    cuenta = resolve_account(db, user_id, str(args.get("billetera", "") or ""))
+
     t = Transaction(
         user_id=user_id,
         type=tipo,
@@ -73,6 +99,7 @@ def registrar_transaccion(db: Session, args: dict, user_id: int) -> str:
         description=str(args.get("descripcion", "")).strip(),
         date=parse_date(args.get("fecha")) or date.today(),
         source=fuente,
+        cuenta_id=cuenta.id,
     )
     db.add(t)
     db.commit()
@@ -82,7 +109,8 @@ def registrar_transaccion(db: Session, args: dict, user_id: int) -> str:
     origen = f" (de {fuente})" if fuente else ""
     return (
         f"Transacción #{t.id} registrada: {fmt(t.amount_cents)} "
-        f"({tipo}) en {cat.name} el {t.date.isoformat()}{desc}{destino}{origen}."
+        f"({tipo}) en {cat.name} el {t.date.isoformat()}{desc}{destino}{origen}. "
+        f"Billetera: {cuenta.name}."
     )
 
 
@@ -266,6 +294,7 @@ SCHEMAS = [
                     "fecha": {"type": "string", "description": "Fecha YYYY-MM-DD (opcional, por defecto hoy)"},
                     "objetivo": {"type": "string", "description": "Nombre exacto del objetivo de ahorro al que se asigna (opcional). Si es una recaudación: los ingresos asignados suman a la bolsa y los gastos restan."},
                     "fuente": {"type": "string", "description": "Procedencia del ingreso: quién pagó (cliente, empresa). Solo para tipo=income."},
+                    "billetera": {"type": "string", "description": "Nombre exacto de la billetera de donde sale/entra la plata (opcional; usá listar_billeteras). Si no se indica, va a «General»."},
                 },
                 "required": ["tipo", "monto", "categoria"],
                 "additionalProperties": False,

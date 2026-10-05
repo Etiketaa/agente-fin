@@ -13,7 +13,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
-from . import bills, budgets, goals, imports, transactions, vehicles
+from . import accounts, bills, budgets, goals, imports, transactions, vehicles
 from .base import cents_to_money, fmt, fmt_amount, money_to_cents  # re-exportados
 
 __all__ = [
@@ -32,7 +32,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _IMPLS: dict[str, object] = {}
-for _module in (transactions, goals, budgets, vehicles, imports, bills):
+for _module in (transactions, goals, budgets, vehicles, imports, bills, accounts):
     _IMPLS.update(_module.IMPLS)
 
 # ---------------------------------------------------------------------------
@@ -49,6 +49,7 @@ TOOLS = [
     *vehicles.SCHEMAS,
     *imports.SCHEMAS,
     *bills.SCHEMAS,
+    *accounts.SCHEMAS,
 ]
 
 # Toda herramienta destructiva pasa por acá, sin excepción.
@@ -60,6 +61,10 @@ _SIEMPRE_SENSIBLE = {
     "importar_csv",  # escribe muchos registros de una
     "pagar_vencimiento",  # genera un gasto real + cambia estado
     "eliminar_vencimiento",
+    # Las tres tocan el patrimonio global: se confirman siempre.
+    "crear_billetera",
+    "ajustar_saldo_billetera",
+    "eliminar_billetera",
 }
 
 # Escrituras que se frenan a partir de cierto monto.
@@ -153,5 +158,20 @@ def summarize_action(name: str, args: dict) -> str:
 
     if name == "eliminar_vencimiento":
         return f"Eliminar el vencimiento #{args.get('id')}"
+
+    if name == "crear_billetera":
+        return (
+            f"Crear la billetera «{args.get('nombre')}» "
+            f"({args.get('tipo')}) con saldo inicial de {fmt_amount(args.get('saldo', 0))}"
+        )
+
+    if name == "ajustar_saldo_billetera":
+        return (
+            f"Ajustar el saldo de «{args.get('nombre')}» a "
+            f"{fmt_amount(args.get('saldo'))} (conciliación)"
+        )
+
+    if name == "eliminar_billetera":
+        return f"Eliminar la billetera «{args.get('nombre')}»"
 
     return f"Ejecutar {name} con {args}"

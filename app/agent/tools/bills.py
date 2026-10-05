@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ... import analytics
 from ...models import Bill, Transaction
 from .base import find_category, fmt, money_to_cents, parse_date
+from .transactions import resolve_account
 
 _ICONO = {
     analytics.PAGADO: "✅",
@@ -96,6 +97,9 @@ def pagar_vencimiento(db: Session, args: dict, user_id: int) -> str:
     if bill.paid_at is not None:
         raise ValueError(f"El vencimiento «{bill.description}» ya está pagado.")
 
+    # El pago sale de alguna billetera; si no se indica, va a «General».
+    cuenta_id = resolve_account(db, user_id, str(args.get("billetera", "") or "")).id
+
     t = Transaction(
         user_id=user_id,
         type="expense",
@@ -103,6 +107,8 @@ def pagar_vencimiento(db: Session, args: dict, user_id: int) -> str:
         category_id=bill.category_id,
         description=f"Pago: {bill.description}",
         date=date.today(),
+        # El pago sale de alguna billetera; si no se indica, va a «General».
+        cuenta_id=cuenta_id,
     )
     db.add(t)
     bill.paid_at = date.today()
