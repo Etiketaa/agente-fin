@@ -98,10 +98,36 @@ class GoalRow:
     status: str
     required_per_month_cents: int | None  # para llegar a la fecha límite
     contributions: int  # cuántos movimientos están asignados
+    # El desglose de `saved_cents`. En un objetivo de recaudación no es lo
+    # mismo tener 300.000 ahorrados que haber gastado 300.000: son dos restas
+    # distintas sobre el mismo número. Ver GoalTotals.
+    income_cents: int
+    expense_cents: int
 
 
-def _goal_aggregate(db: Session, user_id: int, goal: SavingsGoal) -> tuple[int, int]:
-    """(suma en centavos, cantidad de movimientos) de un objetivo.
+@dataclass(frozen=True)
+class GoalTotals:
+    """Lo que hay adentro de una meta, desagregado.
+
+    `saved_cents` es el número que se muestra como "ahorrado". Los dos
+    componentes van aparte porque en una meta de recaudación no son lo mismo:
+    si se recaudaron 500.000 y ya se gastaron 200.000, lo que queda disponible
+    son 300.000. Con un solo número la card muestra algo que no se puede
+    explicar ("¿recaudé 300.000 o gasté 300.000?").
+
+    También sirve para reconstruir una meta: al borrarla, los movimientos que
+    tenía asignados quedan atrás, así que hay que volver a cargarlos a mano, y
+    justamente estos dos números son los que hay que recargar.
+    """
+
+    saved_cents: int
+    income_cents: int
+    expense_cents: int
+    count: int
+
+
+def _goal_aggregate(db: Session, user_id: int, goal: SavingsGoal) -> GoalTotals:
+    """Suma en centavos de lo asignado a un objetivo, desagregada.
 
     - ahorro: suma directa de los montos asignados (los aportes son gastos en
       la cuenta general pero plata que queda en la meta).
@@ -113,20 +139,27 @@ def _goal_aggregate(db: Session, user_id: int, goal: SavingsGoal) -> tuple[int, 
             Transaction.user_id == user_id, Transaction.goal_id == goal.id
         )
     ).all()
+    income = sum(t.amount_cents for t in rows if t.type == "income")
+    expense = sum(t.amount_cents for t in rows if t.type == "expense")
     if goal.kind == RECAUDACION:
-        total = sum(
-            t.amount_cents if t.type == "income" else -t.amount_cents for t in rows
-        )
+        saved = income - expense
     else:
-        total = sum(t.amount_cents for t in rows)
-    return int(total), len(rows)
+        saved = income + expense
+    return GoalTotals(
+        saved_cents=int(saved),
+        income_cents=int(income),
+        expense_cents=int(expense),
+        count=len(rows),
+    )
 
 
 def goal_contributions(db: Session, user_id: int, goal_id: int) -> tuple[int, int]:
+    """(guardado, cantidad de movimientos). El agente sólo necesita la suma."""
     goal = db.get(SavingsGoal, goal_id)
     if goal is None or goal.user_id != user_id:
         return 0, 0
-    return _goal_aggregate(db, user_id, goal)
+    totals = _goal_aggregate(db, user_id, goal)
+    return totals.saved_cents, totals.count
 
 
 def _months_until(target: date, today: date) -> float:
@@ -137,7 +170,8 @@ def _months_until(target: date, today: date) -> float:
 
 
 def _goal_row(db: Session, user_id: int, goal: SavingsGoal, today: date) -> GoalRow:
-    saved, count = _goal_aggregate(db, user_id, goal)
+    totals = _goal_aggregate(db, user_id, goal)
+    saved = totals.saved_cents
     remaining = max(goal.target_cents - saved, 0)
     percent = (saved / goal.target_cents * 100) if goal.target_cents else 0.0
 
@@ -165,7 +199,9 @@ def _goal_row(db: Session, user_id: int, goal: SavingsGoal, today: date) -> Goal
         notes=goal.notes or "",
         status=status,
         required_per_month_cents=required,
-        contributions=count,
+        contributions=totals.count,
+        income_cents=totals.income_cents,
+        expense_cents=totals.expense_cents,
     )
 
 

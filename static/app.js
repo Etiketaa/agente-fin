@@ -749,6 +749,16 @@ function renderGoals() {
     const badge = g.kind === "recaudacion"
       ? ` <span class="tag goal-kind">🧺 recaudación</span>`
       : ` <span class="tag goal-kind">🎯 ahorro</span>`;
+    // En una meta de recaudación el número grande es la resta (recaudado menos
+    // gastado), que no se puede explicar solo. El desglose dice de dónde sale.
+    // En una meta de ahorro no: lo que aporta es plata y ya se ve.
+    const desglose = g.kind === "recaudacion" && g.income_cents
+      ? `<div class="goal-desglose">
+           <span class="goal-desglose-dato"><span class="muted small">recaudado</span> <span class="num pos">${moneyFmt(g.income)}</span></span>
+           <span class="goal-desglose-dato"><span class="muted small">gastado</span> <span class="num neg">${moneyFmt(g.expense)}</span></span>
+           <span class="goal-desglose-dato"><span class="muted small">disponible</span> <span class="num"><strong>${moneyFmt(g.saved)}</strong></span></span>
+         </div>`
+      : "";
     el.innerHTML = `
       <div class="goal-head">
         <div>
@@ -764,6 +774,7 @@ function renderGoals() {
         <span class="num"><strong>${moneyFmt(g.saved)}</strong> de ${moneyFmt(g.target_amount)}</span>
         <span class="muted">${pct(g.percent)}</span>
       </div>
+      ${desglose}
       ${extra}`;
     box.appendChild(el);
   }

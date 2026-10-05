@@ -159,6 +159,10 @@ def _goal_out(row: analytics.GoalRow) -> GoalOut:
         ),
         required_per_month_cents=row.required_per_month_cents,
         contributions=row.contributions,
+        income=cents_to_money(row.income_cents),
+        income_cents=row.income_cents,
+        expense=cents_to_money(row.expense_cents),
+        expense_cents=row.expense_cents,
     )
 
 

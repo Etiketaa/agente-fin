@@ -134,6 +134,34 @@ No se puede borrar un objetivo que tiene movimientos asignados: se rechaza con
 un 409 y el detalle de cuántos son. Desvincularlos en silencio dejaría
 movimientos apuntando a un objetivo inexistente.
 
+### El desglose de una meta de recaudación
+
+Una meta de ahorro suma lo que se le aporta: el progreso es el aporte. Una meta
+de **recaudación** es la resta: lo que entró de la colecta menos lo que ya se
+gastó con esa plata. Con un solo número en pantalla, "125.000 de 400.000" no se
+puede explicar — ¿recaudé 125.000 o gasté 125.000?—, y en una meta con muchos
+movimientos es imposible de responder a ojo.
+
+Por eso `_goal_aggregate()` devuelve un `GoalTotals` con los dos componentes
+separados, y `GoalRow` los expone como `income_cents` y `expense_cents`
+(`GoalOut` los devuelve en pesos y en centavos, como el resto de la API):
+
+- `saved_cents` — lo que se muestra como progreso. `ingresos − gastos` en
+  recaudación, `ingresos + gastos` en ahorro (un aporte es un gasto en la cuenta
+  general, pero plata que queda en la meta).
+- `income_cents` — lo que entró a la meta.
+- `expense_cents` — lo que se gastó de la meta.
+
+La card muestra el desglose sólo en metas de recaudación, y sólo si hay algo
+recaudado. En una de ahorro no aporta nada: lo que aporta es plata.
+
+El motivo segundo es operativo: al borrar una meta, los movimientos asignados
+quedan atrás (por eso el 409). Si la querés volver a crear, estos dos números son
+exactamente lo que hay que recargar a mano, y ahora están en la respuesta.
+
+`goal_contributions()` sigue devolviendo la tupla `(suma, cantidad)` porque es lo
+único que necesita el agente.
+
 ## Presupuestos mensuales y alertas
 
 Una fila por categoría con un tope mensual. `BUDGET_ALERT_PCT` (0.8 por
@@ -463,7 +491,7 @@ finanzas/
 │   └── app.js
 ├── scripts/
 │   ├── demo.py            # datos de ejemplo (opcional)
-│   ├── smoke.py           # regresión end-to-end (104 chequeos, incluye auth y aislamiento)
+│   ├── smoke.py           # regresión end-to-end (108 chequeos, incluye auth y aislamiento)
 │   └── prove_provider.py  # prueba real contra el proveedor configurado
 └── requirements.txt
 ```

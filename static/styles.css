@@ -586,6 +586,24 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .budget-card.atencion .bar-fill { background: var(--amber); }
 .goal-card.alcanzado .bar-fill { background: var(--income); }
 .goal-extra { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
+/* De dónde sale el número de una meta de recaudación: recaudado menos gastado.
+   En el teléfono baja de ancho y se parte en dos líneas, porque tres columnas
+   de "recaudado / gastado / disponible" no entran en 360px. */
+.goal-desglose {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-soft);
+  font-size: 0.82rem;
+}
+.goal-desglose-dato { display: flex; align-items: baseline; gap: 6px; }
+@media (max-width: 400px) {
+  .goal-desglose-dato { flex: 1 1 100%; }
+}
 .bill-actions { display: flex; align-items: center; gap: 8px; }
 /* "Ver los N pagos más": mismo ancho que las filas, para que se lea como parte
    de la lista y no como un botón suelto al final. */

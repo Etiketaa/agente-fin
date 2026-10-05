@@ -126,6 +126,13 @@ class GoalOut(BaseModel):
     required_per_month: float | None
     required_per_month_cents: int | None
     contributions: int
+    # De dónde sale `saved`: lo que entró y lo que se gastó de la meta. En un
+    # objetivo de recaudación `saved` es la resta de los dos, y sin el desglose
+    # la card muestra un número que no se puede explicar.
+    income: float = 0.0
+    income_cents: int = 0
+    expense: float = 0.0
+    expense_cents: int = 0
 
 
 # ---------------------------------------------------------------------------

@@ -483,6 +483,17 @@ def _run(c: Cleanup):
     check("recaudación: progreso = ingresos − gastos asignados",
           row["saved_cents"] == i["amount_cents"] - e["amount_cents"])
     check("cuenta ambos movimientos", row["contributions"] == 2)
+    # El desglose: sin él, el progreso de una recaudación es un número que no
+    # se puede explicar ("¿recaudé 18.000 o gasté 18.000?"). Con la meta
+    # borrada los movimientos asignados quedan atrás, así que además son los
+    # dos números que hay que recargar a mano.
+    check("desglosa lo recaudado", row["income_cents"] == i["amount_cents"])
+    check("desglosa lo gastado", row["expense_cents"] == e["amount_cents"])
+    check("el desglose suma el progreso",
+          row["income_cents"] - row["expense_cents"] == row["saved_cents"])
+    check("el desglose en pesos cuadra con los centavos",
+          int(round(row["income"] * 100)) == row["income_cents"]
+          and int(round(row["expense"] * 100)) == row["expense_cents"])
 
     # ----------------------------------------------------------- presupuestos
     print("\n[presupuestos mensuales]")
