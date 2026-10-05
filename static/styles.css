@@ -366,6 +366,7 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .tag.goal { background: rgba(174, 149, 255, 0.14); color: #bb9dff; }
 .tag.goal-kind { background: rgba(255,255,255,0.05); color: var(--muted); font-weight: 600; }
 .tag.source { background: var(--income-soft); color: var(--income); font-weight: 700; }
+.tag.cuenta { background: rgba(255,255,255,0.06); color: var(--muted); font-weight: 700; }
 
 /* ---------- Formularios en línea ---------- */
 .card-head { margin-bottom: 14px; }
@@ -429,6 +430,82 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .goal-card.alcanzado .bar-fill { background: var(--income); }
 .goal-extra { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
 .bill-actions { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- Billeteras (patrimonio) ---------- */
+/* El total manda y las filas son el detalle: mismo patrón que una app de banco,
+   donde el saldo total se ve primero y las cuentas debajo. */
+.patrimonio {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-elev);
+  margin-bottom: 10px;
+}
+.patrimonio .card-label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.patrimonio-total {
+  font-size: clamp(1.6rem, 5.4vw, 2.1rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.patrimonio-aviso { margin: -2px 0 10px; }
+.patrimonio-aviso:empty { display: none; }
+
+.accounts-list { display: flex; flex-direction: column; }
+.account-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 2px;
+  border-top: 1px solid var(--border);
+}
+.account-icon { font-size: 1.15rem; line-height: 1; }
+.account-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.account-name {
+  font-weight: 700;
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-amt { font-weight: 800; font-size: 0.95rem; white-space: nowrap; }
+.account-acts { display: flex; gap: 6px; }
+/* Botón de icono: 44px de área táctil (el mínimo cómodo) con glifo chico.
+   En pantallas angostas el nombre de la billetera es lo que necesita el
+   espacio, así que el botón se queda con lo justo. */
+.account-acts .small-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+@media (max-width: 420px) {
+  .account-row { gap: 9px; }
+}
+
+/* Borrar una billetera vive adentro del sheet de esa billetera, no en la fila:
+   en un teléfono de 360px una fila con dos botones deja el nombre ilegible, y
+   además borrar deserves que uno ya haya abierto esa billetera. */
+.account-danger {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+.account-danger .btn { width: 100%; }
 
 /* ---------- Alertas ---------- */
 #budget-alerts .alert-box {

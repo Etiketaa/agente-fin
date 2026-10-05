@@ -11,6 +11,8 @@ const state = {
   period: "mes",
   categories: [],
   goals: [],
+  accounts: [],
+  lastAccount: null, // última billetera usada: se pre-selecciona al registrar
   budgetMonth: currentMonth(),
   pending: null,
   chatMessages: [], // historial {role, content} enviado al backend
@@ -173,6 +175,180 @@ function syncBudgetCategories() {
 // Panel financiero
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Billeteras (patrimonio: cuánta plata hay y dónde)
+// ---------------------------------------------------------------------------
+
+const ACCOUNT_ICON = { banco: "🏦", digital: "📱", efectivo: "💵", otro: "👛" };
+
+function cuentaIcon(kind) {
+  return ACCOUNT_ICON[kind] || ACCOUNT_ICON.otro;
+}
+
+// La billetera de un movimiento, o null si no se puede mostrar (sin asignar o
+// con una billetera que ya no existe).
+function cuentaDe(t) {
+  const acc = state.accounts.find((a) => a.name === t.cuenta);
+  if (!acc || acc.es_default) return null;
+  return { icon: cuentaIcon(acc.kind), name: acc.name };
+}
+
+async function renderAccounts() {
+  const data = await api("/api/accounts");
+  state.accounts = data.accounts;
+
+  const total = $("#patrimonio-total");
+  total.textContent = moneyFmt(data.total);
+  total.classList.toggle("pos", data.total >= 0);
+  total.classList.toggle("neg", data.total < 0);
+
+  // Si el usuario todavía no cargó ninguna billetera real, el "patrimonio" es en
+  // realidad sólo la diferencia entre ingresos y gastos registrados. Decirlo es
+  // la diferencia entre un número útil y uno que miente (ver DESIGN.md).
+  const reales = data.accounts.filter((a) => !a.es_default);
+  const aviso = $("#patrimonio-aviso");
+  aviso.textContent = reales.length
+    ? ""
+    : "Todavía no cargaste ninguna billetera: este total es sólo la diferencia entre tus ingresos y gastos registrados, no tu plata.";
+
+  const box = $("#accounts-list");
+  box.innerHTML = "";
+  if (!data.accounts.length) {
+    box.innerHTML = `<div class="no-data">Sin billeteras cargadas.</div>`;
+    syncAccountOptions();
+    return;
+  }
+  for (const a of data.accounts) {
+    const row = document.createElement("div");
+    row.className = "account-row";
+    const sub = a.es_default
+      ? "Movimientos sin billetera asignada"
+      : a.movimientos
+        ? `${a.movimientos} mov.${a.ultimo_movimiento ? " · último " + a.ultimo_movimiento : ""}`
+        : "sin movimientos";
+    row.innerHTML = `
+      <span class="account-icon">${cuentaIcon(a.kind)}</span>
+      <span class="account-main">
+        <span class="account-name">${esc(a.name)}</span>
+        <span class="muted small">${esc(sub)}</span>
+      </span>
+      <span class="account-amt num ${a.balance >= 0 ? "pos" : "neg"}">${moneyFmt(a.balance)}</span>
+      <span class="account-acts">
+        ${
+          a.es_default
+            ? ""
+            : `<button class="btn ghost small-btn" data-edit-account="${a.id}" title="Ajustar saldo de ${esc(a.name)}">✎</button>`
+        }
+      </span>`;
+    box.appendChild(row);
+  }
+  box.querySelectorAll("[data-edit-account]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const acc = state.accounts.find((a) => a.id === Number(btn.dataset.editAccount));
+      openAccountForm(acc);
+    });
+  });
+  syncAccountOptions();
+}
+
+function syncAccountOptions() {
+  const sel = $("#tx-cuenta");
+  if (!sel) return;
+  const previo = state.lastAccount || sel.value;
+  sel.innerHTML = "";
+  // Las billeteras reales van primero y «General» al final: es el destino de los
+  // movimientos sueltos, no la billetera que uno elige por defecto.
+  const orden = [...state.accounts].sort((a, b) => Number(a.es_default) - Number(b.es_default));
+  for (const a of orden) {
+    const opt = document.createElement("option");
+    opt.value = a.name;
+    opt.textContent = cuentaIcon(a.kind) + " " + a.name + (a.es_default ? " (sin asignar)" : "");
+    sel.appendChild(opt);
+  }
+  // Preferencia: la última billetera usada (casi siempre es la misma).
+  const existe = [...sel.options].some((o) => o.value === previo);
+  const primeraReal = orden.find((a) => !a.es_default);
+  sel.value = existe ? previo : (primeraReal ? primeraReal.name : (orden[0] ? orden[0].name : ""));
+}
+
+// Alta de billetera (modo crear) y conciliación de saldo (modo ajustar).
+function openAccountForm(account) {
+  const form = $("#account-form");
+  form.dataset.id = account ? String(account.id) : "";
+  $("#sheet-account-title").textContent = account
+    ? `Ajustar saldo — ${account.name}`
+    : "Nueva billetera";
+  $("#account-name").value = account ? account.name : "";
+  $("#account-kind").value = account ? account.kind : "digital";
+  $("#account-notes").value = account ? account.notes || "" : "";
+  $("#account-saldo").value = account ? account.balance : "";
+  $("#account-submit").textContent = account ? "Ajustar saldo" : "Agregar billetera";
+  $("#account-hint").textContent = account
+    ? "Poné el saldo que figura hoy en la app del banco: el total se corrige solo, sin tocar los movimientos."
+    : "Es el saldo que figura en la app del banco ahora. Queda como base y de ahí en adelante se calcula solo.";
+  // Borrar vive acá adentro y no en la fila: primero abrís la billetera.
+  $("#account-danger").classList.toggle("hidden", !account);
+  if (account) {
+    $("#account-delete").textContent = account.movimientos
+      ? `Eliminar billetera (sus ${account.movimientos} movimiento(s) pasan a «General»)`
+      : "Eliminar billetera";
+  }
+  openSheet("#sheet-account");
+  setTimeout(() => $(account ? "#account-saldo" : "#account-name").focus(), 120);
+}
+
+async function onSubmitAccount(e) {
+  e.preventDefault();
+  const form = e.target;
+  const id = form.dataset.id;
+  const payload = {
+    name: $("#account-name").value.trim(),
+    kind: $("#account-kind").value,
+    saldo: parseFloat($("#account-saldo").value || "0") || 0,
+    notes: $("#account-notes").value.trim(),
+  };
+  try {
+    if (id) {
+      await api(`/api/accounts/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      toast("Saldo actualizado", "success");
+    } else {
+      const nueva = await api("/api/accounts", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      // La billetera recién creada pasa a ser la pre-seleccionada.
+      state.lastAccount = nueva.name;
+      toast("Billetera agregada", "success");
+    }
+    form.reset();
+    closeSheets();
+    await refreshPanel();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function deleteAccount(id) {
+  const acc = state.accounts.find((a) => a.id === id);
+  const extra =
+    acc && acc.movimientos
+      ? `\nSus ${acc.movimientos} movimiento(s) pasarán a «General».`
+      : "";
+  if (!confirm(`¿Eliminar la billetera «${acc ? acc.name : id}»?${extra}`)) return;
+  try {
+    await api(`/api/accounts/${id}?reasignar=1`, { method: "DELETE" });
+    if (state.lastAccount === (acc ? acc.name : null)) state.lastAccount = null;
+    toast("Billetera eliminada", "success");
+    closeSheets();
+    await refreshPanel();
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
 async function renderSummary() {
   const range = periodRange();
   const qs = new URLSearchParams(range).toString();
@@ -255,9 +431,12 @@ async function renderTransactions() {
     for (const t of items) {
       const isIncome = t.type === "income";
       const icon = CAT_ICON[t.category] || (isIncome ? "💸" : "📦");
+      const cc = cuentaDe(t);
       const chips = [
         t.source ? `<span class="tag source">💵 ${esc(t.source)}</span>` : "",
         t.goal ? `<span class="tag goal">🎯 ${esc(t.goal)}</span>` : "",
+        // La billetera sólo cuando NO es «General»: mostrarla siempre sería ruido.
+        cc ? `<span class="tag cuenta">${cc.icon} ${esc(cc.name)}</span>` : "",
       ].filter(Boolean).join(" ");
       const item = document.createElement("div");
       item.className = "feed-item";
@@ -346,6 +525,7 @@ async function refreshPanel() {
   // medio cargar sin explicar por qué.
   const tareas = [
     ["resumen", renderSummary],
+    ["billeteras", renderAccounts],
     ["movimientos", renderTransactions],
     ["objetivos", loadGoals],
     ["presupuestos", loadBudgets],
@@ -668,11 +848,15 @@ async function onSubmitTx(e) {
     date: $("#tx-date").value || null,
     // La procedencia solo se manda en ingresos; en gastos se ignora.
     source: esIngreso ? ($("#tx-source").value.trim() || null) : null,
+    // Billetera: es lo que mantiene vivo el saldo de cada una.
+    cuenta: $("#tx-cuenta").value || null,
   };
   setBusy(btn, true);
   try {
     await api("/api/transactions", { method: "POST", body: JSON.stringify(payload) });
     toast("Movimiento registrado", "success");
+    // Recordamos la billetera usada: casi siempre es la misma y evita elegirla.
+    state.lastAccount = payload.cuenta;
     e.target.reset();
     closeSheets();
     syncCategoryOptions();
@@ -922,6 +1106,12 @@ function initSheets() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheets(); });
   $$("[data-close-sheet]").forEach((b) => b.addEventListener("click", closeSheets));
   $("#btn-nuevo-bill").addEventListener("click", () => jumpToBills());
+  $("#btn-nueva-cuenta").addEventListener("click", () => openAccountForm(null));
+  $("#account-form").addEventListener("submit", onSubmitAccount);
+  $("#account-delete").addEventListener("click", () => {
+    const id = $("#account-form").dataset.id;
+    if (id) deleteAccount(Number(id));
+  });
 }
 
 function initFab() {

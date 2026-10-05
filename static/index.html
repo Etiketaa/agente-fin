@@ -74,7 +74,7 @@
 
       <div class="cards" id="summary-cards">
         <div class="card summary hero">
-          <div class="card-label">Balance</div>
+          <div class="card-label">Balance del período</div>
           <div class="card-value" id="sum-balance">—</div>
         </div>
         <div class="card summary income">
@@ -89,6 +89,28 @@
           <div class="card-label">Movimientos</div>
           <div class="card-value" id="sum-count">—</div>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="goal-head">
+            <div>
+              <h2>Billeteras</h2>
+              <p class="muted small">
+                Tu plata repartida. El saldo de cada una se mueve solo con cada
+                movimiento que le cargues. Cargá la primera con el saldo real que
+                tiene hoy: ese número es la base.
+              </p>
+            </div>
+            <button class="btn primary small-btn" id="btn-nueva-cuenta" type="button">+ Agregar</button>
+          </div>
+        </div>
+        <div class="patrimonio">
+          <span class="card-label">Patrimonio total</span>
+          <span class="patrimonio-total num" id="patrimonio-total">—</span>
+        </div>
+        <p class="muted small patrimonio-aviso" id="patrimonio-aviso"></p>
+        <div id="accounts-list" class="accounts-list"></div>
       </div>
 
       <div class="grid">
@@ -252,6 +274,11 @@
           <option value="">— ninguno —</option>
         </select>
       </label>
+      <!-- De qué billetera sale/entra la plata: es lo que mantiene al día el
+           saldo de cada una. Por defecto, la última usada. -->
+      <label>Billetera
+        <select id="tx-cuenta" name="cuenta"></select>
+      </label>
       <label id="tx-source-wrap" class="hidden">Procedencia
         <input type="text" id="tx-source" name="source" maxlength="80"
                placeholder="Cliente X, Empresa Y, Mercado Pago..." />
@@ -260,6 +287,42 @@
         <input type="text" id="tx-description" name="description" maxlength="200" placeholder="Opcional" />
       </label>
       <button type="submit" class="btn primary">Registrar</button>
+    </form>
+  </div>
+
+  <div class="sheet hidden" id="sheet-account" role="dialog" aria-label="Billetera">
+    <div class="sheet-head">
+      <div class="sheet-title" id="sheet-account-title">Nueva billetera</div>
+      <button class="btn ghost small-btn" data-close-sheet type="button">✕ Cerrar</button>
+    </div>
+    <form id="account-form" class="tx-form">
+      <label>Nombre
+        <input type="text" id="account-name" required maxlength="80" placeholder="Mercado Pago" />
+      </label>
+      <div class="form-row">
+        <label>Tipo
+          <select id="account-kind">
+            <option value="digital">Digital</option>
+            <option value="banco">Banco</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+        <label id="account-saldo-wrap">Saldo real hoy
+          <input type="number" id="account-saldo" step="0.01" placeholder="50000" />
+        </label>
+      </div>
+      <p class="muted small" id="account-hint">
+        Es el saldo que figura en la app del banco ahora. Queda como base y de
+        ahí en adelante se calcula solo.
+      </p>
+      <label>Notas
+        <input type="text" id="account-notes" maxlength="200" placeholder="Opcional" />
+      </label>
+      <button type="submit" class="btn primary" id="account-submit">Agregar billetera</button>
+      <div class="account-danger hidden" id="account-danger">
+        <button type="button" class="btn danger" id="account-delete">Eliminar billetera</button>
+      </div>
     </form>
   </div>
 
