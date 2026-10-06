@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import os
 import secrets
+from datetime import datetime, timedelta
 
 # Iteraciones de PBKDF2: costo deliberado (~0.1s por login en esta máquina).
 # Suficiente para frenar fuerza bruta sin molestar al usuario real.
@@ -47,6 +48,17 @@ def new_token() -> str:
 def hash_token(token: str) -> str:
     """SHA-256 del token: lo que se guarda y se busca en la base."""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def session_expiry(days: int) -> datetime:
+    """Momento en que deja de valer una sesión emitida ahora.
+
+    Un token es un secreto de 256 bits que viaja en un header, y en un celular
+    compartido o en el navegador de otra persona puede quedar expuesto. Por eso la
+    sesión tiene fecha de muerte propia y no depende de que su dueño se acuerde de
+    hacer logout: el token deja de abrir la puerta solo, sin borrar ningún dato.
+    """
+    return datetime.now() + timedelta(days=days)
 
 
 def valid_username(username: str) -> str:

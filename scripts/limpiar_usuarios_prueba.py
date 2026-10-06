@@ -57,6 +57,11 @@ USUARIOS_A_BORRAR = [
     "casob",
     "casoc",
     "fase2",
+    # Los tres siguientes los vuelve a crear el smoke (`smoke_a`, `smoke_b`) o
+    # `scripts/demo.py` (`demo`). `demo` además es una cuenta ABIERTA: su
+    # contraseña es la constante `DEMO_PASSWORD = "demo1234"` del repo, así que
+    # cualquiera que conozca la URL puede entrar a la base real.
+    "demo",
 ]
 
 # Nombres que el script se niega a borrar, aunque estén en la lista de arriba.

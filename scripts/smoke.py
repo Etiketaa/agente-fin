@@ -246,6 +246,72 @@ def _run(c: Cleanup):
     me = req("GET", "/api/auth/me", token=tok_a)
     check("me devuelve el usuario propio", me["username"] == "smoke_a")
 
+    # --- Sesiones: vencimiento y logout ------------------------------------
+    # Estos checks tocan la base a propósito (no hay forma de "adelantar el reloj"
+    # por HTTP), así que primero se confirma que el servidor y este script están
+    # contra la MISMA base. Sin este candado, correr el smoke contra un servidor
+    # local con DATABASE_URL apuntando a la real escribiría datos de prueba en
+    # producción sin avisar.
+    from app.config import db_fingerprint, get_settings
+
+    salud = req("GET", "/health", token="")
+    misma = salud.get("db") == db_fingerprint(get_settings().database_url)
+    check("el servidor y el smoke comparten la base", misma)
+
+    if not misma:
+        print("  ! se omiten los checks de sesión: tocarían una base distinta")
+    else:
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import select as _select
+
+        from app import auth as _auth
+        from app.db import SessionLocal as _SL
+        from app.models import UserSession as _US
+
+        def _buscar(token: str):
+            h = _auth.hash_token(token)
+            with _SL() as db2:
+                return db2.scalar(_select(_US).where(_US.token_hash == h))
+
+        def _vencer(token: str) -> None:
+            """Pone el vencimiento de esta sesión en el pasado (el reloj corrió)."""
+            with _SL() as db2:
+                s = db2.scalar(
+                    _select(_US).where(_US.token_hash == _auth.hash_token(token))
+                )
+                if s is not None:
+                    s.expires_at = datetime.now() - timedelta(days=1)
+                    db2.commit()
+
+        def _existe(token: str) -> bool:
+            return _buscar(token) is not None
+
+        # Una sesión nueva tiene vencimiento en el futuro, no vacío.
+        tok_nuevo = req("POST", "/api/auth/login",
+                        {"username": "smoke_a", "password": "password123"}, token="")["token"]
+        s = _buscar(tok_nuevo)
+        check("la sesión nueva tiene vencimiento futuro",
+              s is not None and s.expires_at is not None and s.expires_at > datetime.now())
+
+        # Vencida = 401, y la fila se borra (no queda una sesión muerta en la base).
+        _vencer(tok_nuevo)
+        expect_error("sesión vencida no abre la puerta",
+                     lambda: req("GET", "/api/auth/me", token=tok_nuevo), 401)
+        check("la sesión vencida se borra al rechazarla", not _existe(tok_nuevo))
+
+        # Logout: revoca de verdad el token que estaba usando ese dispositivo.
+        tok_salir = req("POST", "/api/auth/login",
+                        {"username": "smoke_a", "password": "password123"}, token="")["token"]
+        req("POST", "/api/auth/logout", token=tok_salir)
+        expect_error("logout invalida el token",
+                     lambda: req("GET", "/api/auth/me", token=tok_salir), 401)
+        check("logout borra la fila de la sesión", not _existe(tok_salir))
+
+        # Logout sin token no rompe nada (el frontend lo llama al cerrar sesión).
+        req("POST", "/api/auth/logout", token="")
+        check("logout sin token responde sin error", True)
+
     # A partir de acá, todo corre como smoke_a por defecto.
     global _TOKEN
     _TOKEN = tok_a

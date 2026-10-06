@@ -31,7 +31,20 @@ class User(Base):
 
 
 class UserSession(Base):
-    """Sesión iniciada: un token opaco por login (revocable con logout)."""
+    """Sesión iniciada: un token opaco por login (revocable con logout).
+
+    `expires_at` es el motivo por el que existe el logout y las dos mitades de
+    esta tabla son distintas: `token_hash` es el secreto (nunca el token en
+    claro), `expires_at` es la regla de que un token robado no sirva para
+    siempre. Sin vencimiento, la única forma de cortar el acceso a una sesión
+    era que el usuario hiciera logout desde ese mismo dispositivo: si el token
+    se filtró a otro lado, el acceso duraba indefinidamente.
+
+    Es nullable a propósito, para que la migración que agrega la columna no
+    tenga que inventarle un valor a las sesiones que ya existían. La regla al
+    leer es "sin vencimiento = vencida" (ver `_session_from_request`): si por
+    alguna razón quedara una en NULL, se rechaza, no se acepta.
+    """
 
     __tablename__ = "user_sessions"
 
@@ -39,6 +52,7 @@ class UserSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     user: Mapped[User] = relationship()
 

@@ -1,11 +1,11 @@
 """Endpoints REST de la aplicación."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from . import analytics, auth as auth_helpers
@@ -207,8 +207,28 @@ def get_config():
 # ---------------------------------------------------------------------------
 
 def _issue_token(db: Session, user: User) -> TokenOut:
+    """Emite un token de sesión con fecha de vencimiento.
+
+    También barre las sesiones vencidas del usuario antes de guardar la nueva: es
+    el único momento donde ya sabemos que el login fue legítimo, así que es un
+    lugar seguro para limpiar, y evita que la tabla crezca con filas muertas de
+    gente que nunca vuelve a hacer logout.
+    """
+    db.execute(
+        delete(UserSession).where(
+            UserSession.user_id == user.id,
+            UserSession.expires_at.is_not(None),
+            UserSession.expires_at <= datetime.now(),
+        )
+    )
     token = auth_helpers.new_token()
-    db.add(UserSession(user_id=user.id, token_hash=auth_helpers.hash_token(token)))
+    db.add(
+        UserSession(
+            user_id=user.id,
+            token_hash=auth_helpers.hash_token(token),
+            expires_at=auth_helpers.session_expiry(get_settings().session_ttl_days),
+        )
+    )
     db.commit()
     return TokenOut(token=token, username=user.username)
 
@@ -276,12 +296,34 @@ def _token_from_header(request: Request) -> str | None:
 
 
 def _session_from_request(request: Request, db: Session) -> UserSession | None:
+    """La sesión del token Bearer, o None si no hay una válida.
+
+    Este es el único lugar donde se decide si una sesión sirve. Todo lo demás
+    (los endpoints de datos, el logout, el `me`) pasa por acá, así que el
+    vencimiento se chequea en un solo punto y no se puede olvidar en uno.
+
+    Dos reglas, y la segunda es la importante:
+    - Sin `expires_at` la sesión se considera VENCIDA, no válida. Ninguna sesión
+      emitida por esta versión queda sin fecha, pero si alguna llegara sin ella
+      (una base migrada a mano, un import viejo) se rechaza: un control de
+      seguridad que falla abierto no es un control.
+    - Una sesión vencida se borra, no se ignora. La fila no sirve para nada más y
+      dejarla ocupando lugar haría que el mismo token siga "en la base" para
+      siempre, que es justamente lo que se vino a evitar.
+    """
     token = _token_from_header(request)
     if not token:
         return None
-    return db.scalar(
+    session = db.scalar(
         select(UserSession).where(UserSession.token_hash == auth_helpers.hash_token(token))
     )
+    if session is None:
+        return None
+    if session.expires_at is None or session.expires_at <= datetime.now():
+        db.delete(session)
+        db.commit()
+        return None
+    return session
 
 
 def _user_from_request(request: Request, db: Session) -> User | None:

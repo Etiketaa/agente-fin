@@ -9,7 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, select
 
 from .api import router
+from .config import db_fingerprint, get_settings
 from .db import Base, SessionLocal, engine
+from .migrations import run_migrations
 from .models import User
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -20,7 +22,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # una consulta, lejos de la causa real.
 EXPECTED_COLUMNS: dict[str, set[str]] = {
     "users": {"id", "username", "password_hash", "created_at"},
-    "user_sessions": {"id", "user_id", "token_hash", "created_at"},
+    "user_sessions": {"id", "user_id", "token_hash", "created_at", "expires_at"},
     "categories": {"id", "user_id", "name", "kind", "created_at"},
     "vehicles": {"id", "user_id", "name", "kind", "notes", "created_at"},
     "transactions": {
@@ -41,7 +43,13 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
 
 
 def ensure_schema() -> None:
-    """Falla al arrancar, y con un mensaje útil, si el esquema está desactualizado."""
+    """Falla al arrancar, y con un mensaje útil, si el esquema está desactualizado.
+
+    Es la red de seguridad de `app/migrations.py`, no el mecanismo: las columnas
+    que agrega una migración ya deberían estar cuando corre esto. Si se dispara,
+    significa que hay una columna nueva en el código que ninguna migración crea,
+    y eso hay que arreglarlo en el código, no a mano en la base.
+    """
     inspector = inspect(engine)
     tablas = set(inspector.get_table_names())
     for tabla, esperadas in EXPECTED_COLUMNS.items():
@@ -53,16 +61,27 @@ def ensure_schema() -> None:
             raise RuntimeError(
                 f"El esquema de la tabla '{tabla}' está desactualizado: faltan las "
                 f"columnas {sorted(faltantes)}.\n"
-                f"Este proyecto no trae migraciones automáticas. Resolvedlo así:\n"
-                f"  1. Si los datos no te importan: borrá finanzas.db y reiniciá el servidor.\n"
-                f"  2. Si te importan: agregá la(s) columna(s) a mano antes de arrancar "
-                f"(SQLite: ALTER TABLE {tabla} ADD COLUMN ...)."
+                f"La app aplica migraciones al arrancar (ver app/migrations.py), así "
+                f"que esto significa que esa columna no está en ninguna migración y "
+                f"hay que agregarla:\n"
+                f"  - Escribí la migración en app/migrations.py y sumala a MIGRACIONES.\n"
+                f"  - Para una base de prueba: borrá finanzas.db y reiniciá el servidor."
             )
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    ensure_schema()
+    # El orden importa y es de menos a más caro de romper:
+    #   1. `create_all` crea las tablas que faltan.
+    #   2. `run_migrations` agrega las columnas que faltan (y anota qué aplicó).
+    #   3. `ensure_schema` verifica que el esquema esté completo.
+    # Así una base vieja sube sola y la red de seguridad sigue estando, pero como
+    # última línea y no como el único mecanismo: avisar que falta una columna no
+    # es lo mismo que agregarla.
     Base.metadata.create_all(engine)
+    aplicadas = run_migrations(engine)
+    if aplicadas:
+        print("migraciones aplicadas: " + "; ".join(aplicadas))
+    ensure_schema()
     # Ya no se siembran categorías globales: cada usuario recibe las suyas al
     # registrarse (ver app/seed.py). Los usuarios existentes sin categorías las
     # reciben en el primer request autenticado (get_current_user las completa).
@@ -85,8 +104,13 @@ app = FastAPI(title="Finanzas Personales", lifespan=lifespan)
 
 @app.get("/health")
 def health():
-    """Sonda mínima para verificar que el proceso responde."""
-    return {"status": "ok"}
+    """Sonda mínima para verificar que el proceso responde.
+
+    Devuelve también la huella de la base: es pública, no lleva credenciales, y le
+    permite a un test confirmar que está hablando con la base que cree antes de
+    escribir en ella (ver `app.config.db_fingerprint`).
+    """
+    return {"status": "ok", "db": db_fingerprint(get_settings().database_url)}
 
 
 app.include_router(router)

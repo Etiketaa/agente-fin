@@ -516,6 +516,61 @@ Detalles deliberados:
 - El agente opera siempre como el usuario del token: categorías del prompt,
   queries y clasificador CSV están scopeados por `user_id`.
 
+### Las sesiones tienen fecha de vencimiento
+
+Un token es un secreto de 256 bits que viaja en un header. Si ese header queda
+expuesto — un celular compartido, el navegador de otra persona, un log de proxy
+— la única forma de cortar el acceso era que el dueño hiciera logout **desde
+ese mismo dispositivo**. Si el token se había filtrado a otro lado, el acceso a
+los datos duraba indefinidamente.
+
+Cada sesión guarda `expires_at` (`SESSION_TTL_DAYS`, 30 días por defecto). El
+control está en un único punto, `_session_from_request` en `app/api.py`, que es
+por donde pasan todos los endpoints, el logout y el `me`: no hay forma de
+olvidarse de verificarlo en uno de ellos.
+
+Dos reglas que importan:
+
+- **Sin `expires_at` la sesión se rechaza, no se acepta.** Ninguna sesión
+  emitida por esta versión queda sin fecha, pero si alguna llegara sin ella, un
+  control de seguridad que falla abierto no es un control.
+- **Una sesión vencida se borra, no se ignora.** La fila no sirve para nada más y
+  dejarla haría que el mismo token siguiera "en la base" para siempre.
+
+Login y registro barren de paso las sesiones vencidas del usuario: es el único
+momento en que sabemos que el login fue legítimo, así que es un lugar seguro
+para limpiar y la tabla no crece con filas muertas.
+
+Las sesiones que ya existían **no se invalidaron** al agregar la columna: la
+migración les calculó el vencimiento desde su propio `created_at`, así que la
+sesión del celular siguió viva y las viejas murieron solas cuando les tocó.
+
+## Migraciones de esquema
+
+`Base.metadata.create_all()` crea las tablas que faltan pero **no** agrega
+columnas a las que ya existen. `app/migrations.py` cubre ese hueco: una lista
+ordenada de pasos versionados que se aplican al arrancar y se anotan en la tabla
+`schema_migrations`. Sin esto, la primera columna nueva obligaba a correr
+`ALTER TABLE` a mano contra la base real, y si se olvidaba la app no levantaba
+en producción.
+
+Cada paso se escribe para poder correr dos veces sin romper (la segunda vez ve
+que la columna ya está y no hace nada), así que el mismo camino sirve para una
+base nueva y para una con datos. El orden del arranque en `app/main.py` es de
+menos a más caro de romper:
+
+1. `create_all` — tablas que faltan.
+2. `run_migrations` — columnas que faltan, anotando qué aplicó.
+3. `ensure_schema` — verifica que el esquema esté completo.
+
+`ensure_schema()` queda como **red de seguridad**, no como el mecanismo: si se
+dispara, significa que hay una columna en el código que ninguna migración crea,
+y eso se arregla agregando la migración, no a mano en la base.
+
+Para agregar una migración: escribir un `_00N_descripcion(engine)` en
+`app/migrations.py`, sumarlo a la lista `MIGRACIONES` **sin reordenar lo que ya
+corró**, y agregar la columna a `EXPECTED_COLUMNS` en `app/main.py`.
+
 ## Modelo intercambiable (punto clave de la arquitectura)
 
 Todo el sistema habla con `app/agent/provider.py`. Cambiar de modelo es editar
@@ -562,6 +617,7 @@ finanzas/
 │   ├── analytics.py       # ← saldos, metas, presupuestos, vencimientos y alertas
 │   ├── importer.py        # ← importar CSV + clasificador local (TF-IDF)
 │   ├── api.py             # endpoints REST
+│   ├── migrations.py      # ← migraciones de esquema al arrancar (versionadas, idempotentes)
 │   ├── main.py            # app FastAPI + seed de categorías + guard de esquema
 │   └── agent/
 │       ├── provider.py    # ← capa de proveedor intercambiable
@@ -581,7 +637,7 @@ finanzas/
 │   └── app.js
 ├── scripts/
 │   ├── demo.py            # datos de ejemplo (opcional)
-│   ├── smoke.py           # regresión end-to-end (108 chequeos, incluye auth y aislamiento)
+│   ├── smoke.py           # regresión end-to-end (115 chequeos, incluye auth y aislamiento)
 │   └── prove_provider.py  # prueba real contra el proveedor configurado
 └── requirements.txt
 ```
@@ -689,7 +745,13 @@ Hecho:
    (ahorrás netamente para un fin, gastando en el camino).
 9. ✅ **Billeteras + patrimonio** (saldo derivado por billetera, conciliación,
    «General» como destino de lo que no se imputa, agente con 4 herramientas).
+10. ✅ **Migraciones de esquema** (`app/migrations.py`): pasos versionados que
+    se aplican al arrancar. `create_all()` nunca agregan columnas y sin esto
+    la primera columna nueva obligaba a un `ALTER TABLE` a mano contra la base
+    real, con la app sin levantar si se olvidaba.
+11. ✅ **Vencimiento de sesión** (`expires_at`, `SESSION_TTL_DAYS`): un token
+    filtrado deja de abrir la puerta solo, sin depender de un logout. Control en
+    un solo punto (`_session_from_request`).
 
-Roadmap completo. Posibles siguientes (no definidos): app móvil / PWA con
-login persistente, rate-limit al login, expiración de sesiones, roles
-(admin), exportar/importar por usuario.
+Posibles siguientes (no definidos): rate-limit al login, app móvil / PWA
+instalable con login persistente, roles (admin), exportar/importar por usuario.
