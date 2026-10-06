@@ -30,6 +30,8 @@
   --radius: 16px;
   --radius-s: 10px;
   --space: clamp(14px, 4vw, 22px);
+  --barra-alto: 3px;      /* alto de la barra de carga del panel */
+  --spin: 1em;            /* anillo del botón ocupado: crece con su texto */
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.4);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);  /* exponential ease-out */
 
@@ -157,6 +159,35 @@ body {
    la regla base a propósito: a igual especificidad gana la última. */
 @media (max-width: 520px) {
   .container { padding-bottom: calc(152px + env(safe-area-inset-bottom)); }
+}
+
+/* ---------- Barra de carga del panel ---------- */
+/* Se cuelga de aria-busy, que refreshPanel() ya pone y saca de #main-container.
+   No hay JS ni HTML nuevos: es la cara visible de un atributo que ya estaba y
+   que hasta ahora no se veía en ningún lado. Las reglas de reduced-motion no
+   la cubren, porque el bloque global con `*` no matchea pseudo-elementos. */
+#main-container[aria-busy="true"]::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--barra-alto);
+  background: var(--mint);
+  transform-origin: left center;
+  opacity: 0.55;
+  z-index: 90;
+  animation: barra-carga 1.1s var(--ease) infinite;
+}
+@keyframes barra-carga {
+  0% { transform: scaleX(0); opacity: 1; }
+  55% { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0.2; }
+}
+/* Sin movimiento queda una franja quieta y ancha: sigue diciendo que se está
+   cargando, igual que hace el esqueleto con su opacity fija. */
+@media (prefers-reduced-motion: reduce) {
+  #main-container[aria-busy="true"]::before { animation: none; }
 }
 /* Cada vista es una columna: secciones/órdenes con aire entre bloques. */
 .container > section {
@@ -433,6 +464,26 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .btn.danger { background: var(--expense-soft); color: var(--expense); border: 1px solid transparent; }
 .small-btn { padding: 9px 14px; font-size: var(--fs-caption); min-height: 38px; }
 
+/* Anillo del botón ocupado. Lo inserta y saca setBusy(); el color sale de
+   currentColor, así que funciona en primario, ghost y danger sin clases extra.
+   El texto del botón no se reemplaza más por "…": queda a la izquierda del
+   anillo, así el botón sigue diciendo qué hace mientras trabaja. */
+.spin {
+  display: inline-block;
+  width: var(--spin);
+  height: var(--spin);
+  margin-inline-end: 7px;
+  vertical-align: -0.14em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: girar 0.7s linear infinite;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+/* Sin movimiento el anillo queda un arco quieto, que no comunica nada y sobra:
+   el botón ya está disabled y su texto sigue visible, que es la señal real. */
+@media (prefers-reduced-motion: reduce) { .spin { display: none; } }
+
 /* ---------- Barras ---------- */
 .bar-row { margin-bottom: 12px; }
 .bar-row:last-child { margin-bottom: 0; }
@@ -472,13 +523,6 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .qa:hover { background: rgba(255, 255, 255, 0.07); }
 .qa:active { transform: scale(0.96); }
 .qa-icon { font-size: var(--fs-lg); }
-
-/* Flash del destino de una quick action (card foco) */
-@keyframes cardflash {
-  0% { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(52, 224, 161, 0.18); }
-  100% { border-color: var(--border); box-shadow: none; }
-}
-.card.flash { animation: cardflash 0.9s var(--ease); }
 
 /* ---------- Feed de movimientos (agrupado por día) ---------- */
 /* Lista escaneable tipo app: icono de categoría + importe alineado a la derecha. */
@@ -520,6 +564,20 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 .feed-del { opacity: 0; padding: 4px 10px; min-height: 30px; }
 .feed-item:hover .feed-del, .feed-item:focus-within .feed-del { opacity: 1; }
 @media (hover: none) { .feed-del { opacity: 1; } } /* celular: sin hover, siempre visible */
+
+/* ---------- Flash de la fila recién agregada ---------- */
+/* El id del movimiento recién creado viaja en la respuesta del POST y la fila
+   recién creada recién existe después de refrescar el panel, así que no hay
+   conmutación de clase al instante: se la busca por data-del y se le pone la
+   clase. Sólo se animan border-color y box-shadow — las mismas dos propiedades
+   que ya transiciona el resto de la app, ninguna de layout. */
+@keyframes cardflash {
+  0% { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(52, 224, 161, 0.18); }
+  100% { border-color: var(--border); box-shadow: none; }
+}
+.feed-item.flash { animation: cardflash 0.9s var(--ease); }
+/* Bajo reduced-motion el bloque global con `*` mata la animación y la fila
+   aparece sin flash, igual que el resto de la app. */
 /* ---------- Tabla de movimientos (legado; el Panel usa el feed) ---------- */
 .table-wrap { overflow-x: auto; }
 

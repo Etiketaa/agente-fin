@@ -2,7 +2,14 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- viewport-fit=cover hace que la página llegue a los bordes físicos de la
+       pantalla. Sin él, env(safe-area-inset-*) evalúa a 0, y son justo los que
+       usa styles.css en la barra inferior, el FAB, la sheet y el container:
+       los seis usos quedaban poniendo nada y los iconos del tabbar caían debajo
+       del indicador de inicio de iOS. Con él los insets valen ~34px en los
+       iPhone con indicador y 0 en los que no tienen, así que el mismo CSS
+       sirve en todos los equipos. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Finanzas Personales</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />

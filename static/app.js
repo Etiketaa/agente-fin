@@ -107,10 +107,25 @@ function setBusy(button, busy, label) {
   if (busy) {
     button.dataset.label = button.textContent;
     button.disabled = true;
-    button.textContent = "…";
+    button.setAttribute("aria-busy", "true");
+    // El anillo va ANTES del texto, que se conserva: el botón sigue diciendo
+    // qué hace mientras trabaja. El guard evita duplicar anillos si un
+    // llamado a busy llega dos veces sin su par (p. ej. #pending-yes, que
+    // nunca pasa por busy=false antes de que renderPending lo reemplace).
+    if (!button.querySelector(".spin")) {
+      const anillo = document.createElement("span");
+      anillo.className = "spin";
+      anillo.setAttribute("aria-hidden", "true");
+      button.prepend(anillo);
+    }
   } else {
     button.disabled = false;
-    button.textContent = button.dataset.label || label;
+    button.removeAttribute("aria-busy");
+    const anillo = button.querySelector(".spin");
+    if (anillo) anillo.remove();
+    // `|| ""` al final: si no hay label guardado ni de respaldo, restaurar a
+    // vacío mejor que al literal "undefined".
+    button.textContent = button.dataset.label || label || "";
   }
 }
 
@@ -1084,9 +1099,38 @@ async function onSubmitBill(e) {
 // Alta de movimiento
 // ---------------------------------------------------------------------------
 
+// Destaca la fila recién creada. renderTransactions pinta cada movimiento con
+// data-del = id en su botón de borrar, así que la fila se encuentra por ahí.
+// El remove + reflow antes del add reinicia la animación si el botón se toca
+// dos veces seguidas sin que animationend llegara a correr (p. ej. bajo
+// reduced-motion, donde la animación no arranca y la clase quedaría puesta).
+function flashFila(id) {
+  const poner = (item) => {
+    item.classList.remove("flash");
+    void item.offsetWidth; // reinicia la animación si ya estaba flasheando
+    item.classList.add("flash");
+    item.addEventListener("animationend", () => item.classList.remove("flash"), { once: true });
+  };
+  // La fila puede no existir todavía si el feed se re-renderiza después del
+  // refreshPanel (doble submit, refresh concurrente). Reintentar con
+  // setTimeout hasta que aparezca, con tope de 10s para no dejar loops colgados.
+  const intentar = (intentos) => {
+    const btn = document.querySelector(`.feed-item [data-del="${id}"]`);
+    const item = btn?.closest(".feed-item");
+    if (item) { poner(item); return; }
+    if (intentos > 0) setTimeout(() => intentar(intentos - 1), 200);
+  };
+  intentar(50);
+}
+
 async function onSubmitTx(e) {
   e.preventDefault();
   const btn = e.target.querySelector("button[type=submit]");
+  // Guard anti-doble-submit: si el botón ya está deshabilitado, el submit
+  // ya está en curso. Sin esto, un doble click o Enter+click crearía la
+  // transacción dos veces y el flash de la fila se perdería en el segundo
+  // refreshPanel.
+  if (btn.disabled) return;
   const amount = parseFloat($("#tx-amount").value);
   const tipo = $("#tx-type").value;
   const esIngreso = tipo === "income";
@@ -1113,7 +1157,7 @@ async function onSubmitTx(e) {
   };
   setBusy(btn, true);
   try {
-    await api("/api/transactions", { method: "POST", body: JSON.stringify(payload) });
+    const creado = await api("/api/transactions", { method: "POST", body: JSON.stringify(payload) });
     toast("Movimiento registrado", "success");
     // Recordamos la billetera usada: casi siempre es la misma y evita elegirla.
     state.lastAccount = payload.cuenta;
@@ -1129,6 +1173,10 @@ async function onSubmitTx(e) {
     closeSheets();
     syncCategoryOptions();
     await refreshPanel();
+    // La fila recién creada recién existe después de refrescar; la flasheamos
+    // para que el ojo la encuentre entre las 40. Si quedó fuera del período o
+    // del límite, no hay fila y no pasa nada.
+    flashFila(creado?.id);
   } catch (err) {
     toast(err.message, "error");
   } finally {
