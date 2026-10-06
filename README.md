@@ -545,6 +545,47 @@ Las sesiones que ya existían **no se invalidaron** al agregar la columna: la
 migración les calculó el vencimiento desde su propio `created_at`, así que la
 sesión del celular siguió viva y las viejas murieron solas cuando les tocó.
 
+### El freno a los intentos de login
+
+`POST /auth/login` estaba en internet abierto y no tenía ningún límite. El hash
+(PBKDF2, 200k iteraciones) cuesta ~0.1s por intento, así que atrasa pero no
+corta: sin un límite se puede probar contraseñas indefinidamente desde
+cualquier lado.
+
+La regla: `LOGIN_MAX_ATTEMPTS` (5) fallos sobre la misma clave dentro de la
+ventana de `LOGIN_WINDOW_MINUTES` (15), y después responde **429** con
+`Retry-After`. La ventana se mide desde el **último** intento, no desde el
+primero: con una ventana fija, un atacante que insiste de corrido se libera
+cada 15 minutos y sigue probando igual.
+
+Cuatro decisiones que no son obvias:
+
+- **El freno va antes de mirar la contraseña**, no después. Si se frenara
+  después, el atacante igual habría probado su intento con ese mismo request.
+- **La clave es el usuario intentado, no la IP.** Detrás del proxy de Vercel
+  todas las conexiones comparten IP de origen, y limitar por IP dejaría a todo
+  el mundo cortado junto con un solo atacante. A cambio se acepta que alguien
+  pueda querer cortar un usuario a propósito: dura lo que dura la ventana y no
+  borra ningún dato, así que es una molestia y no un daño.
+- **Cuenta también a los que no existen.** De otra forma un atacante sabría si
+  un usuario está registrado midiendo a partir de qué intento le devuelven 429.
+- **El 429 usa un solo mensaje**, igual que el 401: «Demasiados intentos
+  fallidos. Esperá unos minutos y probá de nuevo.»
+
+La tabla `login_attempts` es **la única sin `user_id`** y sin FK a `users`, y
+es a propósito: no es una tabla de dominio, es de seguridad. El docstring de
+`app/models.py` lo explica, porque si no parecería un descuido de la regla
+multiusuario.
+
+El login exitoso **borra la racha, pero sólo la propia**. Quien ya sabe la
+clave no necesita freno, y borrar todas las filas permitiría desbloquear a
+cualquier usuario simplemente logueándose con el propio.
+
+Vive en la base y no en una variable del proceso: en Vercel cada request puede
+caer en una instancia distinta y el proceso no sobrevive entre requests, así
+que un contador en memoria se perdería en cada llamada y el atacante lo
+reiniciaría sin siquiera darse cuenta.
+
 ## Migraciones de esquema
 
 `Base.metadata.create_all()` crea las tablas que faltan pero **no** agrega
@@ -553,6 +594,10 @@ ordenada de pasos versionados que se aplican al arrancar y se anotan en la tabla
 `schema_migrations`. Sin esto, la primera columna nueva obligaba a correr
 `ALTER TABLE` a mano contra la base real, y si se olvidaba la app no levantaba
 en producción.
+
+Para una tabla **nueva** no hace falta migración: la crea `create_all` sola
+(`login_attempts` salió así). La migración recién entra cuando cambia una
+tabla que ya existe.
 
 Cada paso se escribe para poder correr dos veces sin romper (la segunda vez ve
 que la columna ya está y no hace nada), así que el mismo camino sirve para una
@@ -637,7 +682,7 @@ finanzas/
 │   └── app.js
 ├── scripts/
 │   ├── demo.py            # datos de ejemplo (opcional)
-│   ├── smoke.py           # regresión end-to-end (115 chequeos, incluye auth y aislamiento)
+│   ├── smoke.py           # regresión end-to-end (126 chequeos, incluye auth, aislamiento y el freno de login)
 │   └── prove_provider.py  # prueba real contra el proveedor configurado
 └── requirements.txt
 ```
@@ -752,6 +797,11 @@ Hecho:
 11. ✅ **Vencimiento de sesión** (`expires_at`, `SESSION_TTL_DAYS`): un token
     filtrado deja de abrir la puerta solo, sin depender de un logout. Control en
     un solo punto (`_session_from_request`).
+12. ✅ **Freno de intentos de login** (`LOGIN_MAX_ATTEMPTS` /
+    `LOGIN_WINDOW_MINUTES`, tabla `login_attempts`): 5 fallos por clave en
+    15 minutos y después 429 con `Retry-After`, contados en la base y medidos
+    desde el último intento. Antes el endpoint estaba en internet abierto sin
+    límite alguno.
 
-Posibles siguientes (no definidos): rate-limit al login, app móvil / PWA
-instalable con login persistente, roles (admin), exportar/importar por usuario.
+Posibles siguientes (no definidos): app móvil / PWA instalable con login
+persistente, roles (admin), exportar/importar por usuario.

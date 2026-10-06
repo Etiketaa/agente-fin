@@ -46,6 +46,8 @@ class Settings:
     sensitive_amount: float  # en unidades de moneda (no centavos)
     budget_alert_pct: float  # fracción del presupuesto que dispara la alerta (0.8 = 80%)
     session_ttl_days: int  # cuánto vive una sesión antes de exigir login de nuevo
+    login_max_attempts: int  # fallos seguidos que se toleran por usuario antes de cortar
+    login_window_minutes: int  # desde el último fallo, cuánto dura el corte
     host: str
     port: int
 
@@ -64,6 +66,8 @@ def get_settings() -> Settings:
         sensitive_amount=float(os.getenv("SENSITIVE_AMOUNT", "50000")),
         budget_alert_pct=float(os.getenv("BUDGET_ALERT_PCT", "0.8")),
         session_ttl_days=int(os.getenv("SESSION_TTL_DAYS", "30")),
+        login_max_attempts=int(os.getenv("LOGIN_MAX_ATTEMPTS", "5")),
+        login_window_minutes=int(os.getenv("LOGIN_WINDOW_MINUTES", "15")),
         host=os.getenv("HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", "8000")),
     )

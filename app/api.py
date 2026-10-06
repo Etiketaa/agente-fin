@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from . import analytics, auth as auth_helpers
+from . import analytics, auth as auth_helpers, freno
 from .agent.agent import run_agent
 from .agent.provider import ProviderError, get_provider
 from .agent.tools import cents_to_money, money_to_cents
@@ -259,14 +259,21 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/auth/login", response_model=TokenOut)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    clave = freno.clave_de(payload.username)
+    # El freno va primero y cuenta sólo fallos: quien sabe la clave pasa igual,
+    # así que un login legítimo nunca gasta intentos.
+    freno.verificar(db, clave)
     try:
         username = auth_helpers.valid_username(payload.username)
     except ValueError:
+        freno.registrar_fallo(db, clave)
         raise HTTPException(401, "Usuario o contraseña incorrectos.")
     user = db.scalar(select(User).where(User.username == username))
     if user is None or not auth_helpers.verify_password(payload.password, user.password_hash):
         # Mismo mensaje en ambos casos: no filtramos si el usuario existe.
+        freno.registrar_fallo(db, clave)
         raise HTTPException(401, "Usuario o contraseña incorrectos.")
+    freno.limpiar(db, clave)
     return _issue_token(db, user)
 
 

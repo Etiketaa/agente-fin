@@ -234,7 +234,10 @@ def _run(c: Cleanup):
     expect_error("usuario duplicado", lambda: req(
         "POST", "/api/auth/register",
         {"username": "SMOKE_A", "password": "password123"}, token=""), 409)
-    expect_error("login con clave wrong", lambda: req(
+    # Se guarda el detalle: es el 401 de un usuario que EXISTE con clave mala,
+    # y más abajo se compara contra el de un usuario inventado para verificar
+    # que el freno no cambie el mensaje y delate si el usuario existe.
+    det_401_existe = expect_error("login con clave wrong", lambda: req(
         "POST", "/api/auth/login",
         {"username": "smoke_a", "password": "wrongpass1"}, token=""), 401)
     expect_error("usuario corto", lambda: req(
@@ -311,6 +314,112 @@ def _run(c: Cleanup):
         # Logout sin token no rompe nada (el frontend lo llama al cerrar sesión).
         req("POST", "/api/auth/logout", token="")
         check("logout sin token responde sin error", True)
+
+        # --- Freno de intentos de login ------------------------------------
+        # Igual que los de sesión, éstos tocan la base: el freno cuenta en la
+        # tabla `login_attempts`. Sin este bloque, una corrida dejaría filas de
+        # prueba en la tabla de seguridad de producción, y la corrida siguiente
+        # arrancaría con el login de estos usuarios ya cortado.
+        from sqlalchemy import delete as _delete
+
+        from app.freno import clave_de as _clave_de
+        from app.models import LoginAttempt as _LA
+
+        def _sembrar(username: str, intentos: int, hace_min: int = 0) -> None:
+            """Pone la racha de esa clave en el estado que hace falta.
+
+            Es la misma idea que `_vencer` con las sesiones: adelantar el estado
+            que de otra forma exigiría fallar cinco veces seguidas y esperar a
+            que pase el reloj. Así cada caso cuesta un request en vez de una
+            tanda entera, que sobre Neon son treinta segundos.
+            """
+            clave = _clave_de(username)
+            with _SL() as db2:
+                db2.execute(_delete(_LA).where(_LA.clave == clave))
+                if intentos:
+                    db2.add(_LA(
+                        clave=clave,
+                        intentos=intentos,
+                        ultima_prueba=datetime.now() - timedelta(minutes=hace_min),
+                    ))
+                db2.commit()
+
+        def _racha(username: str) -> int:
+            with _SL() as db2:
+                fila = db2.get(_LA, _clave_de(username))
+                return fila.intentos if fila is not None else 0
+
+        def _fallo(username: str):
+            """Falla un login a propósito. Devuelve (código, detalle, retry-after)."""
+            try:
+                req("POST", "/api/auth/login",
+                    {"username": username, "password": "wrongpass1"}, token="")
+                return 200, "", ""
+            except urllib.error.HTTPError as e:
+                return (e.code,
+                        json.loads(e.read()).get("detail", ""),
+                        e.headers.get("Retry-After", ""))
+
+        tope = get_settings().login_max_attempts
+        ventana_seg = get_settings().login_window_minutes * 60
+        nadie = "smoke_freno_inexistente"
+        _sembrar(nadie, 0)   # arranque limpio, por si una corrida anterior se
+        _sembrar("smoke_a", 0)  # cortó a mitad de este bloque
+
+        # El freno sube de a uno y corta recién cuando se llega al tope.
+        _sembrar(nadie, tope - 1)
+        check("freno: el fallo que llega al tope sigue en 401",
+              _fallo(nadie)[0] == 401 and _racha(nadie) == tope)
+        cod_429, det_429_nadie, retry = _fallo(nadie)
+        check("freno: al tope responde 429", cod_429 == 429)
+        check("freno: el 429 anuncia cuánto falta con Retry-After",
+              retry.isdigit() and 0 < int(retry) <= ventana_seg)
+
+        # Corta igual a un usuario que existe que a uno inventado.
+        _sembrar("smoke_a", tope)
+        cod_real, det_429_smoke, _ = _fallo("smoke_a")
+        check("freno: el tope corta también a un usuario que existe",
+              cod_real == 429)
+        # `bool()` va puesto a propósito: sin él, dos strings vacíos serían
+        # iguales y el chequeo pasaría sin haber comparado nada.
+        check("freno: el 429 no dice si el usuario existe",
+              bool(det_429_nadie) and det_429_nadie == det_429_smoke)
+
+        # Y el 401 tampoco lo dice: mismo texto con clave mala que con usuario
+        # inexistente, que es el mensaje de toda la vida.
+        _sembrar(nadie, 0)
+        cod_401, det_401_nadie, _ = _fallo(nadie)
+        check("freno: el 401 no filtra si el usuario existe",
+              cod_401 == 401 and bool(det_401_nadie)
+              and det_401_nadie == det_401_existe)
+
+        # Quien logra entrar se limpia a sí mismo, y sólo a sí mismo: si el
+        # éxito de un usuario borrara todas las filas, alguien podría
+        # desbloquear a otro simplemente logueándose.
+        _sembrar(nadie, tope)
+        _sembrar("smoke_a", tope - 1)
+        req("POST", "/api/auth/login",
+            {"username": "smoke_a", "password": "password123"}, token="")
+        check("freno: el login exitoso borra su propia racha",
+              _racha("smoke_a") == 0)
+        check("freno: el éxito de uno no le baja la racha al otro",
+              _racha(nadie) == tope)
+
+        check("freno: después del éxito el fallo vuelve a ser 401",
+              _fallo("smoke_a")[0] == 401)
+
+        # La ventana vence sola: pasado el plazo deja de cortar, sin que nadie
+        # tenga que tocar la base a mano.
+        _sembrar("smoke_a", tope,
+                 hace_min=get_settings().login_window_minutes + 1)
+        check("freno: la ventana vence y vuelve a dejar entrar",
+              _fallo("smoke_a")[0] == 401)
+
+        # Limpieza final: no dejar filas de prueba en la tabla de seguridad.
+        _sembrar(nadie, 0)
+        _sembrar("smoke_a", 0)
+        check("freno: no quedan restos que corten la próxima corrida",
+              _racha(nadie) == 0 and _racha("smoke_a") == 0)
 
     # A partir de acá, todo corre como smoke_a por defecto.
     global _TOKEN

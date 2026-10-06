@@ -39,6 +39,7 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "id", "user_id", "name", "kind", "apertura_cents", "notes", "created_at",
         "updated_at",
     },
+    "login_attempts": {"clave", "intentos", "ultima_prueba"},
 }
 
 
@@ -54,7 +55,13 @@ def ensure_schema() -> None:
     tablas = set(inspector.get_table_names())
     for tabla, esperadas in EXPECTED_COLUMNS.items():
         if tabla not in tablas:
-            continue  # la va a crear create_all() justo después
+            # `create_all()` ya corrió antes que este chequeo, así que una tabla
+            # que no está acá no es "una tabla que falta": es una entrada de este
+            # diccionario que quedó vieja, porque el modelo ya no existe en
+            # app/models.py. Se pasa de largo, porque una expectativa obsoleta no
+            # debería frenar el arranque. Lo que sí frena es una COLUMNA que
+            # falte, y esa es la razón de ser de este chequeo.
+            continue
         actuales = {c["name"] for c in inspector.get_columns(tabla)}
         faltantes = esperadas - actuales
         if faltantes:

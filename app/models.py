@@ -57,6 +57,29 @@ class UserSession(Base):
     user: Mapped[User] = relationship()
 
 
+class LoginAttempt(Base):
+    """Intentos fallidos de login, contados por la clave que se intentó.
+
+    Es la única tabla sin `user_id` y sin FK a users, y es a propósito. El
+    docstring del módulo dice que toda tabla de dominio lleva `user_id`: ésta no
+    es de dominio, es de seguridad, y tiene dos motivos para no filtrar por
+    usuario. El primero es que hay que frenar también los intentos contra un
+    usuario que no existe, que es justamente la mayoría de un ataque. El segundo
+    es que si las dos rutas contaran distinto, un atacante distinguiría una de
+    la otra midiendo a cuántos intentos le devuelven 429.
+
+    La ventana se mide desde `ultima_prueba`, no desde el primer intento: así
+    quien insiste de corrido no se libera cada ventana fija, y el bloqueo recién
+    empieza a correr cuando se deja de intentar.
+    """
+
+    __tablename__ = "login_attempts"
+
+    clave: Mapped[str] = mapped_column(String(80), primary_key=True)
+    intentos: Mapped[int] = mapped_column(Integer, default=0)
+    ultima_prueba: Mapped[datetime] = mapped_column(DateTime)
+
+
 class Category(Base):
     __tablename__ = "categories"
     __table_args__ = (UniqueConstraint("user_id", "name"),)
