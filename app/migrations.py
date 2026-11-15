@@ -36,7 +36,7 @@ from sqlalchemy import inspect, select, text
 from sqlalchemy.engine import Engine
 
 from .db import SessionLocal
-from .models import UserSession
+from .models import UserSession, PasswordReset, PendingTwoFactor, BackupCode
 
 # Identificador de la tabla donde queda registrado qué corrió. Se crea acá y no
 # en `models.py` a propósito: es bookkeeping de la infraestructura, no dominio,
@@ -118,11 +118,57 @@ def _001_sesiones_expiran(engine: Engine) -> str:
     return f"columna agregada, {len(pendientes)} sesiones con vencimiento"
 
 
+def _002_recuperacion_y_2fa(engine: Engine) -> str:
+    """Recuperación de contraseña y verificación en dos pasos (2FA).
+
+    Agrega columnas a `users` y crea las tablas `password_resets`,
+    `pending_two_factors` y `backup_codes`. Las tablas se crean con
+    SQLAlchemy para que el dialecto (Postgres o SQLite) maneje el
+    autoincrement del `id` correctamente. Todo idempotente.
+    """
+    from sqlalchemy import text
+
+    # Columnas nuevas en users (idempotente vía _agregar_columna)
+    _agregar_columna(engine, "users", "two_factor_enabled", "BOOLEAN DEFAULT FALSE")
+    _agregar_columna(engine, "users", "two_factor_secret", "VARCHAR(32)")
+
+    # Las tablas nuevas se crean/dropan con SQLAlchemy. `checkfirst=True`
+    # evita fallar si ya existen; el drop limpia un esquema previo mal creado.
+    PasswordReset.__table__.drop(engine, checkfirst=True)
+    PendingTwoFactor.__table__.drop(engine, checkfirst=True)
+    BackupCode.__table__.drop(engine, checkfirst=True)
+    PasswordReset.__table__.create(engine, checkfirst=True)
+    PendingTwoFactor.__table__.create(engine, checkfirst=True)
+    BackupCode.__table__.create(engine, checkfirst=True)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_password_resets_user_id "
+                "ON password_resets(user_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_pending_two_factors_user_id "
+                "ON pending_two_factors(user_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_backup_codes_user_id "
+                "ON backup_codes(user_id)"
+            )
+        )
+    return "columnas de 2FA en users y tablas password_resets, pending_two_factors, backup_codes"
+
+
 # El orden de la lista es el orden de aplicación. No reordenar lo que ya corrió
 # en otras bases: la numeración es la que garantiza que un `001` faltante se
 # aplique antes que un `002`.
 MIGRACIONES: tuple[tuple[str, Callable[[Engine], str]], ...] = (
     ("001_sesiones_expiran", _001_sesiones_expiran),
+    ("002_recuperacion_y_2fa", _002_recuperacion_y_2fa),
 )
 
 

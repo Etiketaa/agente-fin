@@ -21,7 +21,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # de una versión anterior rompería más adelante con un "no such column" dentro de
 # una consulta, lejos de la causa real.
 EXPECTED_COLUMNS: dict[str, set[str]] = {
-    "users": {"id", "username", "password_hash", "created_at"},
+    "users": {"id", "username", "password_hash", "created_at", "two_factor_enabled", "two_factor_secret"},
     "user_sessions": {"id", "user_id", "token_hash", "created_at", "expires_at"},
     "categories": {"id", "user_id", "name", "kind", "created_at"},
     "vehicles": {"id", "user_id", "name", "kind", "notes", "created_at"},

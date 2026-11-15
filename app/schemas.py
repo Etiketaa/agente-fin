@@ -281,6 +281,58 @@ class UserOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Recuperación de contraseña
+# ---------------------------------------------------------------------------
+
+class ForgotPasswordRequest(BaseModel):
+    username: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    # Se entrega en claro solo mientras no haya servidor de correo. En
+    # producción este campo va a None y el código viaja por email.
+    token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+# ---------------------------------------------------------------------------
+# Verificación en dos pasos (2FA)
+# ---------------------------------------------------------------------------
+
+class TwoFactorEnableRequest(BaseModel):
+    password: str
+
+
+class TwoFactorEnableResponse(BaseModel):
+    secret: str
+    otpauth_url: str
+    backup_codes: list[str]
+
+
+class TwoFactorDisableRequest(BaseModel):
+    password: str
+    code: str
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    pending_token: str
+    code: str
+
+
+class LoginResponse(TokenOut):
+    """Respuesta de login. Si el usuario tiene 2FA, `requires_2fa` es true y
+    `pending_token` es el token temporal para verificar el segundo paso;
+    `token` viene vacío hasta completar la verificación."""
+    requires_2fa: bool = False
+    pending_token: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Agente
 # ---------------------------------------------------------------------------
 

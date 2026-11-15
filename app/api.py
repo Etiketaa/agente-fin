@@ -1,7 +1,7 @@
 """Endpoints REST de la aplicación."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -14,7 +14,19 @@ from .agent.provider import ProviderError, get_provider
 from .agent.tools import cents_to_money, money_to_cents
 from .config import get_settings
 from .db import get_db
-from .models import Account, Bill, Budget, Category, SavingsGoal, Transaction, User, UserSession
+from .models import (
+    Account,
+    Bill,
+    Budget,
+    Category,
+    PasswordReset,
+    PendingTwoFactor,
+    SavingsGoal,
+    Transaction,
+    User,
+    UserSession,
+    BackupCode,
+)
 from .seed import DEFAULT_ACCOUNT_NAME, default_account
 from .schemas import (
     AccountCreate,
@@ -32,17 +44,25 @@ from .schemas import (
     BudgetOut,
     CategoryOut,
     CategoryTotal,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     GoalCreate,
     GoalOut,
     IncomeDay,
     IncomeMonthOut,
     IncomeSourceTotal,
     LoginRequest,
+    LoginResponse,
     RegisterRequest,
+    ResetPasswordRequest,
     SummaryOut,
     TokenOut,
     TransactionCreate,
     TransactionOut,
+    TwoFactorDisableRequest,
+    TwoFactorEnableRequest,
+    TwoFactorEnableResponse,
+    TwoFactorVerifyRequest,
     UserOut,
 )
 
@@ -257,7 +277,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     return _issue_token(db, user)
 
 
-@router.post("/auth/login", response_model=TokenOut)
+@router.post("/auth/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     clave = freno.clave_de(payload.username)
     # El freno va primero y cuenta sólo fallos: quien sabe la clave pasa igual,
@@ -274,6 +294,196 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         freno.registrar_fallo(db, clave)
         raise HTTPException(401, "Usuario o contraseña incorrectos.")
     freno.limpiar(db, clave)
+    if user.two_factor_enabled:
+        # Segundo paso pendiente: se entrega un token temporal de 5 min, no una
+        # sesión todavía. La sesión real se emite al verificar el código.
+        pending = auth_helpers.new_token()
+        db.add(
+            PendingTwoFactor(
+                user_id=user.id,
+                token_hash=auth_helpers.hash_token(pending),
+                expires_at=datetime.now() + timedelta(minutes=5),
+            )
+        )
+        db.commit()
+        return LoginResponse(
+            requires_2fa=True,
+            pending_token=pending,
+            token="",
+            username=user.username,
+        )
+    return _issue_token(db, user)
+
+
+@router.post("/auth/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Pide un código de recuperación de contraseña.
+
+    Si el usuario no existe, devuelve el mismo mensaje que si existiera: no
+    revelamos quién está registrado. Mientras no haya servidor de correo, el
+    token se entrega en claro para poder probar el flujo.
+    """
+    username = payload.username.strip().lower()
+    user = db.scalar(select(User).where(User.username == username))
+    if user is None:
+        return ForgotPasswordResponse(
+            message="Si esa cuenta existe, se generó un código de recuperación válido por 15 minutos.",
+            token=None,
+        )
+    # Invalidar recuperaciones previas no usadas de este usuario
+    db.execute(
+        delete(PasswordReset).where(
+            PasswordReset.user_id == user.id,
+            PasswordReset.used_at.is_(None),
+        )
+    )
+    token = auth_helpers.generate_recovery_token()
+    db.add(
+        PasswordReset(
+            user_id=user.id,
+            token_hash=auth_helpers.hash_token(token),
+            expires_at=datetime.now() + timedelta(minutes=15),
+        )
+    )
+    db.commit()
+    return ForgotPasswordResponse(
+        message="Se generó un código de recuperación. Válido por 15 minutos.",
+        token=token,
+    )
+
+
+@router.post("/auth/reset-password", status_code=204)
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Resetea la contraseña con un código de recuperación válido.
+
+    Al éxito, invalida todas las sesiones activas del usuario para forzar
+    re-login en todos sus dispositivos.
+    """
+    try:
+        auth_helpers.valid_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    reset = db.scalar(
+        select(PasswordReset).where(
+            PasswordReset.token_hash == auth_helpers.hash_token(payload.token)
+        )
+    )
+    if reset is None or reset.used_at is not None or reset.expires_at <= datetime.now():
+        raise HTTPException(400, "Código de recuperación inválido o vencido.")
+    user = db.get(User, reset.user_id)
+    if user is None:
+        raise HTTPException(400, "Código de recuperación inválido.")
+    user.password_hash = auth_helpers.hash_password(payload.password)
+    reset.used_at = datetime.now()
+    db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/auth/two-factor/enable", response_model=TwoFactorEnableResponse)
+def two_factor_enable(
+    payload: TwoFactorEnableRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Activa la verificación en dos pasos (TOTP) para el usuario autenticado.
+
+    Requiere confirmar la contraseña actual. Devuelve el secreto, la URL
+    `otpauth://` (para escanear con Google Authenticator / Authy) y los códigos
+    de respaldo, que solo se muestran esta vez.
+    """
+    if not auth_helpers.verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Contraseña incorrecta.")
+    if user.two_factor_enabled:
+        raise HTTPException(409, "La verificación en dos pasos ya está activada.")
+    secret = auth_helpers.generate_totp_secret()
+    codes = auth_helpers.generate_backup_codes()
+    user.two_factor_secret = secret
+    user.two_factor_enabled = True
+    for code in codes:
+        db.add(BackupCode(user_id=user.id, code_hash=auth_helpers.hash_token(code)))
+    db.commit()
+    otpauth_url = f"otpauth://totp/Finanzas:{user.username}?secret={secret}&issuer=Finanzas"
+    return TwoFactorEnableResponse(
+        secret=secret, otpauth_url=otpauth_url, backup_codes=codes
+    )
+
+
+@router.post("/auth/two-factor/disable", status_code=204)
+def two_factor_disable(
+    payload: TwoFactorDisableRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Desactiva la verificación en dos pasos.
+
+    Requiere contraseña actual y un código válido (TOTP o de respaldo no usado).
+    """
+    if not user.two_factor_enabled:
+        raise HTTPException(400, "La verificación en dos pasos no está activada.")
+    if not auth_helpers.verify_password(payload.password, user.password_hash):
+        raise HTTPException(401, "Contraseña incorrecta.")
+    ok = False
+    if user.two_factor_secret and auth_helpers.totp_verify(user.two_factor_secret, payload.code):
+        ok = True
+    else:
+        backup = db.scalar(
+            select(BackupCode).where(
+                BackupCode.user_id == user.id,
+                BackupCode.code_hash == auth_helpers.hash_token(payload.code),
+                BackupCode.used_at.is_(None),
+            )
+        )
+        if backup is not None:
+            backup.used_at = datetime.now()
+            ok = True
+    if not ok:
+        raise HTTPException(400, "Código de verificación incorrecto.")
+    user.two_factor_enabled = False
+    user.two_factor_secret = None
+    db.execute(delete(BackupCode).where(BackupCode.user_id == user.id))
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/auth/verify-2fa", response_model=TokenOut)
+def verify_2fa(payload: TwoFactorVerifyRequest, db: Session = Depends(get_db)):
+    """Completa el segundo paso del login con 2FA.
+
+    Recibe el `pending_token` del login y el código TOTP (6 dígitos) o un
+    código de respaldo. Si es correcto, emite la sesión real y descarta el
+    token pendiente y el código de respaldo usado.
+    """
+    pending = db.scalar(
+        select(PendingTwoFactor).where(
+            PendingTwoFactor.token_hash == auth_helpers.hash_token(payload.pending_token)
+        )
+    )
+    if pending is None or pending.expires_at <= datetime.now():
+        if pending is not None:
+            db.delete(pending)
+            db.commit()
+        raise HTTPException(400, "Token de verificación inválido o vencido.")
+    user = db.get(User, pending.user_id)
+    if user is None or not user.two_factor_enabled:
+        raise HTTPException(400, "Solicitud de verificación inválida.")
+    ok = False
+    if user.two_factor_secret and auth_helpers.totp_verify(user.two_factor_secret, payload.code):
+        ok = True
+    else:
+        backup = db.scalar(
+            select(BackupCode).where(
+                BackupCode.user_id == user.id,
+                BackupCode.code_hash == auth_helpers.hash_token(payload.code),
+                BackupCode.used_at.is_(None),
+            )
+        )
+        if backup is not None:
+            backup.used_at = datetime.now()
+            ok = True
+    if not ok:
+        raise HTTPException(400, "Código de verificación incorrecto.")
+    db.delete(pending)
     return _issue_token(db, user)
 
 

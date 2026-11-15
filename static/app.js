@@ -1300,8 +1300,53 @@ function onSubmitChat(e) {
 // ---------------------------------------------------------------------------
 
 let authMode = "login";
+let pendingTwofaToken = null; // token temporal del segundo paso (2FA)
 
 function showAuth() {
+  $("#auth-screen").classList.remove("hidden");
+  $("#forgot-screen").classList.add("hidden");
+  $("#reset-screen").classList.add("hidden");
+  $("#twofa-screen").classList.add("hidden");
+  $("#main-container").classList.add("hidden");
+  $("#user-box").classList.add("hidden");
+  $("#fab-wrap").classList.add("hidden");
+}
+
+function showForgot() {
+  $("#auth-screen").classList.add("hidden");
+  $("#forgot-screen").classList.remove("hidden");
+  $("#reset-screen").classList.add("hidden");
+  $("#twofa-screen").classList.add("hidden");
+  $("#main-container").classList.add("hidden");
+  $("#user-box").classList.add("hidden");
+  $("#fab-wrap").classList.add("hidden");
+}
+
+function showReset() {
+  $("#auth-screen").classList.add("hidden");
+  $("#forgot-screen").classList.add("hidden");
+  $("#reset-screen").classList.remove("hidden");
+  $("#twofa-screen").classList.add("hidden");
+  $("#main-container").classList.add("hidden");
+  $("#user-box").classList.add("hidden");
+  $("#fab-wrap").classList.add("hidden");
+}
+
+function showTwoFA(token) {
+  pendingTwofaToken = token;
+  $("#auth-screen").classList.add("hidden");
+  $("#forgot-screen").classList.add("hidden");
+  $("#reset-screen").classList.add("hidden");
+  $("#twofa-screen").classList.remove("hidden");
+  $("#twofa-pending").value = token;
+  $("#twofa-code").value = "";
+  $("#twofa-error").classList.add("hidden");
+  $("#main-container").classList.add("hidden");
+  $("#user-box").classList.add("hidden");
+  $("#fab-wrap").classList.add("hidden");
+}
+
+function enterApp(username) {
   $("#auth-screen").classList.remove("hidden");
   $("#main-container").classList.add("hidden");
   $("#user-box").classList.add("hidden");
@@ -1339,9 +1384,91 @@ async function onSubmitAuth(e) {
       method: "POST",
       body: JSON.stringify(payload),
     });
+    if (res.requires_2fa) {
+      // Segundo paso pendiente: mostrar pantalla de verificación 2FA.
+      showTwoFA(res.pending_token);
+      return;
+    }
     localStorage.setItem(TOKEN_KEY, res.token);
     localStorage.setItem(USER_KEY, res.username);
     e.target.reset();
+    enterApp(res.username);
+    await loadConfig();
+    await loadCategories();
+    await refreshPanel();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.classList.remove("hidden");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+async function onSubmitForgot() {
+  const btn = $("#forgot-submit");
+  const err = $("#forgot-error");
+  err.classList.add("hidden");
+  setBusy(btn, true);
+  try {
+    const res = await api("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ username: $("#forgot-username").value.trim() }),
+    });
+    // Guardamos el token si vino (modo sin correo) para prellenar el reset.
+    if (res.token) {
+      $("#reset-token").value = res.token;
+      $("#reset-code").value = res.token;
+    }
+    toast(res.message, "success");
+    showReset();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.classList.remove("hidden");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+async function onSubmitReset() {
+  const btn = $("#reset-submit");
+  const err = $("#reset-error");
+  err.classList.add("hidden");
+  const token = $("#reset-token").value || $("#reset-code").value.trim();
+  setBusy(btn, true);
+  try {
+    await api("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({
+        token,
+        password: $("#reset-password").value,
+      }),
+    });
+    toast("Contraseña actualizada. Iniciá sesión con tu clave nueva.", "success");
+    showAuth();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.classList.remove("hidden");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+async function onSubmitTwoFA() {
+  const btn = $("#twofa-submit");
+  const err = $("#twofa-error");
+  err.classList.add("hidden");
+  setBusy(btn, true);
+  try {
+    const res = await api("/api/auth/verify-2fa", {
+      method: "POST",
+      body: JSON.stringify({
+        pending_token: pendingTwofaToken,
+        code: $("#twofa-code").value.trim(),
+      }),
+    });
+    localStorage.setItem(TOKEN_KEY, res.token);
+    localStorage.setItem(USER_KEY, res.username);
+    pendingTwofaToken = null;
     enterApp(res.username);
     await loadConfig();
     await loadCategories();
@@ -1519,6 +1646,13 @@ async function init() {
   initSheets();
   $("#auth-form").addEventListener("submit", onSubmitAuth);
   $("#logout-btn").addEventListener("click", onLogout);
+  $("#goto-forgot").addEventListener("click", showForgot);
+  $("#goto-login-from-forgot").addEventListener("click", showAuth);
+  $("#forgot-submit").addEventListener("click", onSubmitForgot);
+  $("#goto-login-from-reset").addEventListener("click", showAuth);
+  $("#reset-submit").addEventListener("click", onSubmitReset);
+  $("#goto-login-from-twofa").addEventListener("click", showAuth);
+  $("#twofa-submit").addEventListener("click", onSubmitTwoFA);
   // Los listeners se bindean siempre: el login posterior los necesita.
   $("#period-select").addEventListener("change", (e) => {
     state.period = e.target.value;

@@ -141,6 +141,58 @@
         <div id="auth-error" class="auth-error hidden"></div>
         <button type="submit" class="btn primary" id="auth-submit">Entrar</button>
       </form>
+      <p class="muted small" style="text-align:center; margin-top:12px;">
+        ¿Olvidaste tu contraseña? <button type="button" class="link-btn" id="goto-forgot">Pedir código de recuperación</button>
+      </p>
+    </div>
+  </div>
+
+  <!-- Pantalla: pedir código de recuperación -->
+  <div id="forgot-screen" class="hidden">
+    <div class="card auth-card">
+      <h2><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-alert"/></svg>Recuperar cuenta</h2>
+      <p class="muted small">Ingresá tu usuario y te generamos un código de recuperación válido por 15 minutos.</p>
+      <label>Usuario
+        <input type="text" id="forgot-username" required minlength="3" maxlength="40"
+               autocomplete="username" placeholder="franco" />
+      </label>
+      <div id="forgot-error" class="auth-error hidden"></div>
+      <button type="button" class="btn primary" id="forgot-submit">Generar código</button>
+      <button type="button" class="btn ghost" id="goto-login-from-forgot">Volver al ingreso</button>
+    </div>
+  </div>
+
+  <!-- Pantalla: resetear contraseña con código -->
+  <div id="reset-screen" class="hidden">
+    <div class="card auth-card">
+      <h2><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-check"/></svg>Nueva contraseña</h2>
+      <p class="muted small">Ingresá el código de recuperación y tu contraseña nueva (mínimo 8 caracteres).</p>
+      <input type="hidden" id="reset-token" />
+      <label>Código de recuperación
+        <input type="text" id="reset-code" required maxlength="120" placeholder="pega el código acá" />
+      </label>
+      <label>Contraseña nueva
+        <input type="password" id="reset-password" required minlength="8" maxlength="200"
+               autocomplete="new-password" placeholder="mínimo 8 caracteres" />
+      </label>
+      <div id="reset-error" class="auth-error hidden"></div>
+      <button type="button" class="btn primary" id="reset-submit">Cambiar contraseña</button>
+      <button type="button" class="btn ghost" id="goto-login-from-reset">Volver al ingreso</button>
+    </div>
+  </div>
+
+  <!-- Pantalla: segundo paso de verificación (2FA) -->
+  <div id="twofa-screen" class="hidden">
+    <div class="card auth-card">
+      <h2><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-bot"/></svg>Verificación en dos pasos</h2>
+      <p class="muted small">Ingresá el código de 6 dígitos de tu app de autenticador (o un código de respaldo).</p>
+      <input type="hidden" id="twofa-pending" />
+      <label>Código
+        <input type="text" id="twofa-code" required maxlength="6" inputmode="numeric" placeholder="123456" />
+      </label>
+      <div id="twofa-error" class="auth-error hidden"></div>
+      <button type="button" class="btn primary" id="twofa-submit">Verificar y entrar</button>
+      <button type="button" class="btn ghost" id="goto-login-from-twofa">Volver al ingreso</button>
     </div>
   </div>
 

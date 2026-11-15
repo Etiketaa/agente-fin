@@ -28,6 +28,10 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Verificación en dos pasos (2FA). `two_factor_secret` guarda el secreto
+    # base32 para TOTP; solo se usa si `two_factor_enabled` es verdadero.
+    two_factor_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
+    two_factor_secret: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class UserSession(Base):
@@ -271,3 +275,71 @@ class Budget(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     category: Mapped[Category] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# Recuperación de contraseña
+# ---------------------------------------------------------------------------
+
+class PasswordReset(Base):
+    """Código de recuperación de contraseña de un solo uso.
+
+    Se genera al pedir "olvidé mi contraseña", tiene vencimiento corto (15 min)
+    y se invalida tras usarlo una vez. Al resetear con éxito se borran todas las
+    sesiones activas del usuario, forzando re-login en todos sus dispositivos.
+    """
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+    user: Mapped[User] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# Verificación en dos pasos (2FA) — TOTP + códigos de respaldo
+# ---------------------------------------------------------------------------
+
+class PendingTwoFactor(Base):
+    """Token temporal emitido tras un login exitoso cuando el usuario tiene 2FA.
+
+    Vive 5 minutos. Solo sirve para completar el segundo paso y entregar la
+    sesión real. No se confunde con una sesión válida: hasta que no se verifica
+    el código, no hay token de sesión.
+    """
+
+    __tablename__ = "pending_two_factors"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+    user: Mapped[User] = relationship()
+
+
+class BackupCode(Base):
+    """Código de respaldo de 8 dígitos para 2FA.
+
+    Se generan 8 al activar la verificación en dos pasos y se entregan en claro
+    una sola vez. Cada uno se usa una sola vez y se invalida después.
+    """
+
+    __tablename__ = "backup_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
+    user: Mapped[User] = relationship()
