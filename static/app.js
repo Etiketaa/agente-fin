@@ -1647,6 +1647,14 @@ async function init() {
   $("#auth-form").addEventListener("submit", onSubmitAuth);
   $("#logout-btn").addEventListener("click", onLogout);
   $("#goto-forgot").addEventListener("click", showForgot);
+  $("#goto-register").addEventListener("click", () => {
+    $$("[data-auth]").forEach((b) => b.classList.remove("active"));
+    const registerBtn = $$("[data-auth]").find((b) => b.dataset.auth === "register");
+    registerBtn.classList.add("active");
+    authMode = "register";
+    $("#auth-submit").textContent = "Crear cuenta";
+    $("#auth-error").classList.add("hidden");
+  });
   $("#goto-login-from-forgot").addEventListener("click", showAuth);
   $("#forgot-submit").addEventListener("click", onSubmitForgot);
   $("#goto-login-from-reset").addEventListener("click", showAuth);
