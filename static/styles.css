@@ -901,13 +901,15 @@ select:focus, input:focus { outline: none; border-color: var(--mint); box-shadow
 @media (max-width: 520px) {
   .tabs { display: none; }
   .app-header-inner {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 14px var(--space) 10px;
   }
-  // Evitar que el título o el user-box se desborden y queden inalcanzables
   .app-header-inner > * { min-width: 0; }
   .app-header h1 { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+  .user-box { width: 100%; justify-content: space-between; }
+  #logout-btn { padding: 8px 14px; font-size: var(--fs-sm); }
 
   .tabbar {
     display: flex;
